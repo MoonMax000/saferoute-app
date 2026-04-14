@@ -1,0 +1,185 @@
+{
+  "type": "FeatureCollection",
+  "metadata": {
+    "source": "mock-data",
+    "description": "NYC risk zones for SafeRoute prototype. Production version would load from API/Firestore.",
+    "version": "1.1.0"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-1", "label": "Times Square Area", "riskLevel": 8, "radius": 500 },
+      "geometry": { "type": "Point", "coordinates": [-73.9855, 40.758] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-2", "label": "Herald Square", "riskLevel": 6, "radius": 400 },
+      "geometry": { "type": "Point", "coordinates": [-73.9857, 40.7484] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-3", "label": "Grand Central", "riskLevel": 7, "radius": 350 },
+      "geometry": { "type": "Point", "coordinates": [-73.9772, 40.7527] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-4", "label": "Midtown East", "riskLevel": 9, "radius": 600 },
+      "geometry": { "type": "Point", "coordinates": [-73.9776, 40.7614] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-5", "label": "Jamaica, Queens", "riskLevel": 5, "radius": 800 },
+      "geometry": { "type": "Point", "coordinates": [-73.7949, 40.7282] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-6", "label": "Downtown Brooklyn", "riskLevel": 4, "radius": 500 },
+      "geometry": { "type": "Point", "coordinates": [-73.9857, 40.6892] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-7", "label": "East Harlem", "riskLevel": 7, "radius": 700 },
+      "geometry": { "type": "Point", "coordinates": [-73.9465, 40.8075] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-8", "label": "Flatbush", "riskLevel": 6, "radius": 500 },
+      "geometry": { "type": "Point", "coordinates": [-73.9496, 40.6501] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-9", "label": "Upper West Side", "riskLevel": 3, "radius": 300 },
+      "geometry": { "type": "Point", "coordinates": [-73.9712, 40.7831] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-10", "label": "Upper East Side", "riskLevel": 2, "radius": 350 },
+      "geometry": { "type": "Point", "coordinates": [-73.9566, 40.7736] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-11", "label": "Greenwich Village", "riskLevel": 4, "radius": 400 },
+      "geometry": { "type": "Point", "coordinates": [-73.9911, 40.7359] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-12", "label": "Financial District", "riskLevel": 3, "radius": 500 },
+      "geometry": { "type": "Point", "coordinates": [-74.006, 40.7128] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-13", "label": "Washington Heights", "riskLevel": 7, "radius": 650 },
+      "geometry": { "type": "Point", "coordinates": [-73.9371, 40.8417] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-14", "label": "South Bronx", "riskLevel": 9, "radius": 900 },
+      "geometry": { "type": "Point", "coordinates": [-73.9185, 40.8198] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-15", "label": "Hunts Point", "riskLevel": 8, "radius": 550 },
+      "geometry": { "type": "Point", "coordinates": [-73.8875, 40.8110] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-16", "label": "Brownsville", "riskLevel": 8, "radius": 700 },
+      "geometry": { "type": "Point", "coordinates": [-73.9065, 40.6594] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-17", "label": "East New York", "riskLevel": 7, "radius": 800 },
+      "geometry": { "type": "Point", "coordinates": [-73.8822, 40.6590] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-18", "label": "Bed-Stuy", "riskLevel": 6, "radius": 600 },
+      "geometry": { "type": "Point", "coordinates": [-73.9365, 40.6872] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-19", "label": "Crown Heights", "riskLevel": 5, "radius": 500 },
+      "geometry": { "type": "Point", "coordinates": [-73.9443, 40.6694] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-20", "label": "Mott Haven", "riskLevel": 7, "radius": 450 },
+      "geometry": { "type": "Point", "coordinates": [-73.9227, 40.8089] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-21", "label": "Chinatown", "riskLevel": 4, "radius": 300 },
+      "geometry": { "type": "Point", "coordinates": [-73.9974, 40.7158] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-22", "label": "Lower East Side", "riskLevel": 5, "radius": 400 },
+      "geometry": { "type": "Point", "coordinates": [-73.9840, 40.7150] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-23", "label": "Hell's Kitchen", "riskLevel": 6, "radius": 450 },
+      "geometry": { "type": "Point", "coordinates": [-73.9934, 40.7638] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-24", "label": "Morningside Heights", "riskLevel": 3, "radius": 350 },
+      "geometry": { "type": "Point", "coordinates": [-73.9614, 40.8093] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-25", "label": "Inwood", "riskLevel": 5, "radius": 500 },
+      "geometry": { "type": "Point", "coordinates": [-73.9228, 40.8677] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-26", "label": "Fordham", "riskLevel": 6, "radius": 550 },
+      "geometry": { "type": "Point", "coordinates": [-73.8985, 40.8614] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-27", "label": "Tremont", "riskLevel": 7, "radius": 500 },
+      "geometry": { "type": "Point", "coordinates": [-73.9050, 40.8461] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-28", "label": "Sunset Park", "riskLevel": 4, "radius": 450 },
+      "geometry": { "type": "Point", "coordinates": [-74.0030, 40.6454] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-29", "label": "Bay Ridge", "riskLevel": 2, "radius": 400 },
+      "geometry": { "type": "Point", "coordinates": [-74.0281, 40.6349] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-30", "label": "Astoria", "riskLevel": 3, "radius": 500 },
+      "geometry": { "type": "Point", "coordinates": [-73.9235, 40.7720] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-31", "label": "Jackson Heights", "riskLevel": 4, "radius": 550 },
+      "geometry": { "type": "Point", "coordinates": [-73.8834, 40.7497] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-32", "label": "Flushing", "riskLevel": 3, "radius": 600 },
+      "geometry": { "type": "Point", "coordinates": [-73.8326, 40.7654] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-33", "label": "Long Island City", "riskLevel": 2, "radius": 400 },
+      "geometry": { "type": "Point", "coordinates": [-73.9485, 40.7472] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-34", "label": "SoHo", "riskLevel": 2, "radius": 300 },
+      "geometry": { "type": "Point", "coordinates": [-73.9993, 40.7233] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": "zone-35", "label": "East Village", "riskLevel": 4, "radius": 350 },
+      "geometry": { "type": "Point", "coordinates": [-73.9818, 40.7265] }
+    }
+  ]
+}
