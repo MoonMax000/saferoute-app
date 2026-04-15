@@ -230,8 +230,9 @@ export function MapView({
   const destPreviewRef = useRef<any>(null);
   const trafficLayerRef = useRef<google.maps.TrafficLayer | null>(null);
   const userLocationRef = useRef<LatLng | null>(null);
+  const hadRoutesRef = useRef(false);
   const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
-  const [mapReady, setMapReady] = useState(false);
+  const [mapInstanceId, setMapInstanceId] = useState(0);
 
   const reverseGeocode = useCallback(
     (lat: number, lng: number, mode: "origin" | "destination") => {
@@ -386,7 +387,7 @@ export function MapView({
       if (destPreviewRef.current) destPreviewRef.current.map = null;
       if (hasRoutes) destPreviewRef.current = null;
     }
-  }, [originCoords, destCoords, routes, reverseGeocode]);
+  }, [originCoords, destCoords, routes, reverseGeocode, mapInstanceId]);
 
   // Draw routes
   useEffect(() => {
@@ -469,10 +470,14 @@ export function MapView({
       }
     });
 
-    if (hasBounds) {
+    // Only fitBounds on first route draw, not on drag-rebuild
+    const isRebuild = hadRoutesRef.current;
+    hadRoutesRef.current = routes.length > 0;
+
+    if (hasBounds && !isRebuild) {
       map.fitBounds(bounds, { top: 60, bottom: 60, left: 60, right: 60 });
     }
-  }, [routes, clearPolylines, reverseGeocode]);
+  }, [routes, clearPolylines, reverseGeocode, mapInstanceId]);
 
   // Draw risk zone polygons
   useEffect(() => {
@@ -521,7 +526,7 @@ export function MapView({
       polygonsRef.current.push(polygon);
       infoWindowsRef.current.push(infoWindow);
     });
-  }, [showZones, clearPolygons, mapReady]);
+  }, [showZones, clearPolygons, mapInstanceId]);
 
   // Traffic layer
   useEffect(() => {
@@ -534,7 +539,7 @@ export function MapView({
     } else {
       trafficLayerRef.current?.setMap(null);
     }
-  }, [showTraffic, mapReady]);
+  }, [showTraffic, mapInstanceId]);
 
   // Simulation marker
   useEffect(() => {
@@ -571,12 +576,17 @@ export function MapView({
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     // Reset refs since map was recreated (e.g. night mode toggle)
+    polylinesRef.current = [];
+    markersRef.current = [];
+    polygonsRef.current = [];
+    infoWindowsRef.current = [];
     originPreviewRef.current = null;
     destPreviewRef.current = null;
     userMarkerRef.current = null;
     simMarkerRef.current = null;
     trafficLayerRef.current = null;
-    setMapReady(true);
+    // Increment counter to re-trigger all drawing effects
+    setMapInstanceId((prev) => prev + 1);
   }, []);
 
   if (!isLoaded) {

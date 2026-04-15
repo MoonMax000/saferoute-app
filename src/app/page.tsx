@@ -43,14 +43,16 @@ export default function Home() {
   }, []);
 
   const handleSearch = useCallback(
-    async (originAddr: string, destAddr: string) => {
+    async (originAddr: string, destAddr: string, isDragRebuild = false) => {
       setIsLoading(true);
       setError(null);
-      setRoutes([]);
-      setRouteAlerts([]);
-      setPinMode(null);
-      setOriginCoords(null);
-      setDestCoords(null);
+      if (!isDragRebuild) {
+        setRoutes([]);
+        setRouteAlerts([]);
+        setPinMode(null);
+        setOriginCoords(null);
+        setDestCoords(null);
+      }
 
       try {
         const result = await searchRoutes(originAddr, destAddr);
@@ -151,7 +153,7 @@ export default function Home() {
       const newOrigin = mode === "origin" ? address : origin;
       const newDest = mode === "destination" ? address : destination;
       if (newOrigin.trim() && newDest.trim()) {
-        setTimeout(() => handleSearch(newOrigin, newDest), 300);
+        setTimeout(() => handleSearch(newOrigin, newDest, true), 300);
       }
     },
     [origin, destination, handleSearch]
