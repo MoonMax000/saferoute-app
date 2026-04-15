@@ -585,6 +585,7 @@ export function MapView({
     userMarkerRef.current = null;
     simMarkerRef.current = null;
     trafficLayerRef.current = null;
+    hadRoutesRef.current = false;
     // Increment counter to re-trigger all drawing effects
     setMapInstanceId((prev) => prev + 1);
   }, []);
