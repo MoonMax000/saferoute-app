@@ -25,6 +25,8 @@ export default function Home() {
   const [showZones, setShowZones] = useState(true);
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
+  const [originCoords, setOriginCoords] = useState<LatLng | null>(null);
+  const [destCoords, setDestCoords] = useState<LatLng | null>(null);
   const [pinMode, setPinMode] = useState<PinMode>(null);
   const [routeAlerts, setRouteAlerts] = useState<RouteAlert[]>([]);
   const [userZoneAlert, setUserZoneAlert] = useState<{
@@ -46,6 +48,8 @@ export default function Home() {
       setRoutes([]);
       setRouteAlerts([]);
       setPinMode(null);
+      setOriginCoords(null);
+      setDestCoords(null);
 
       try {
         const result = await searchRoutes(originAddr, destAddr);
@@ -107,8 +111,13 @@ export default function Home() {
 
   const handleMapPinDrop = useCallback(
     (latlng: LatLng, address: string, mode: PinMode) => {
-      if (mode === "origin") setOrigin(address);
-      else if (mode === "destination") setDestination(address);
+      if (mode === "origin") {
+        setOrigin(address);
+        setOriginCoords(latlng);
+      } else if (mode === "destination") {
+        setDestination(address);
+        setDestCoords(latlng);
+      }
       setPinMode(null);
     },
     []
@@ -160,6 +169,8 @@ export default function Home() {
             destination={destination}
             onOriginChange={setOrigin}
             onDestinationChange={setDestination}
+            onOriginCoordsChange={setOriginCoords}
+            onDestCoordsChange={setDestCoords}
             pinMode={pinMode}
             onPinModeChange={setPinMode}
           />
@@ -241,6 +252,8 @@ export default function Home() {
           nightMode={nightMode}
           simulationPoint={sim.simPoint}
           simulationHeading={sim.simHeading}
+          originCoords={originCoords}
+          destCoords={destCoords}
           onMapPinDrop={handleMapPinDrop}
           onUserLocationChange={handleUserLocationChange}
         />

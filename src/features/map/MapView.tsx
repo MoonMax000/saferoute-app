@@ -50,6 +50,8 @@ interface MapViewProps {
   nightMode: boolean;
   simulationPoint: LatLng | null;
   simulationHeading: number;
+  originCoords?: LatLng | null;
+  destCoords?: LatLng | null;
   onMapPinDrop?: (latlng: LatLng, address: string, mode: PinMode) => void;
   onUserLocationChange?: (latlng: LatLng | null) => void;
 }
@@ -61,6 +63,8 @@ export function MapView({
   nightMode,
   simulationPoint,
   simulationHeading,
+  originCoords,
+  destCoords,
   onMapPinDrop,
   onUserLocationChange,
 }: MapViewProps) {
@@ -78,6 +82,8 @@ export function MapView({
   const userPulseRef = useRef<google.maps.Marker | null>(null);
   const simMarkerRef = useRef<google.maps.Marker | null>(null);
   const simPulseRef = useRef<google.maps.Marker | null>(null);
+  const originPreviewRef = useRef<google.maps.Marker | null>(null);
+  const destPreviewRef = useRef<google.maps.Marker | null>(null);
   const userLocationRef = useRef<LatLng | null>(null);
   const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
   const [mapReady, setMapReady] = useState(false);
@@ -186,6 +192,71 @@ export function MapView({
       draggableCursor: pinMode ? "crosshair" : undefined,
     });
   }, [pinMode]);
+
+  // Preview markers for origin/destination before route search
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const map = mapRef.current;
+    const hasRoutes = routes.length > 0;
+
+    // Origin preview marker
+    if (originCoords && !hasRoutes) {
+      const pos = new google.maps.LatLng(originCoords.lat, originCoords.lng);
+      if (!originPreviewRef.current) {
+        originPreviewRef.current = new google.maps.Marker({
+          position: pos,
+          map,
+          icon: {
+            path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
+            fillColor: "#10b981",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+            scale: 2,
+            anchor: new google.maps.Point(12, 24),
+          },
+          zIndex: 30,
+          title: "Start",
+          animation: google.maps.Animation.DROP,
+        });
+      } else {
+        originPreviewRef.current.setPosition(pos);
+        originPreviewRef.current.setMap(map);
+      }
+    } else {
+      originPreviewRef.current?.setMap(null);
+      if (hasRoutes) originPreviewRef.current = null;
+    }
+
+    // Destination preview marker
+    if (destCoords && !hasRoutes) {
+      const pos = new google.maps.LatLng(destCoords.lat, destCoords.lng);
+      if (!destPreviewRef.current) {
+        destPreviewRef.current = new google.maps.Marker({
+          position: pos,
+          map,
+          icon: {
+            path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
+            fillColor: "#f43f5e",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+            scale: 2,
+            anchor: new google.maps.Point(12, 24),
+          },
+          zIndex: 30,
+          title: "Destination",
+          animation: google.maps.Animation.DROP,
+        });
+      } else {
+        destPreviewRef.current.setPosition(pos);
+        destPreviewRef.current.setMap(map);
+      }
+    } else {
+      destPreviewRef.current?.setMap(null);
+      if (hasRoutes) destPreviewRef.current = null;
+    }
+  }, [originCoords, destCoords, routes]);
 
   // Draw routes
   useEffect(() => {

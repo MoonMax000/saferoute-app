@@ -3,6 +3,7 @@
 import { useRef, useEffect, useCallback } from "react";
 import { MapPin, ArrowUpDown, Navigation, Loader2 } from "lucide-react";
 import type { PinMode } from "@/features/map";
+import type { LatLng } from "@/shared/types";
 
 interface SearchPanelProps {
   onSearch: (origin: string, destination: string) => void;
@@ -11,6 +12,8 @@ interface SearchPanelProps {
   destination: string;
   onOriginChange: (value: string) => void;
   onDestinationChange: (value: string) => void;
+  onOriginCoordsChange?: (coords: LatLng | null) => void;
+  onDestCoordsChange?: (coords: LatLng | null) => void;
   pinMode: PinMode;
   onPinModeChange: (mode: PinMode) => void;
 }
@@ -22,6 +25,8 @@ export function SearchPanel({
   destination,
   onOriginChange,
   onDestinationChange,
+  onOriginCoordsChange,
+  onDestCoordsChange,
   pinMode,
   onPinModeChange,
 }: SearchPanelProps) {
@@ -47,6 +52,12 @@ export function SearchPanel({
         } else if (place?.name) {
           onOriginChange(place.name);
         }
+        if (place?.geometry?.location) {
+          onOriginCoordsChange?.({
+            lat: place.geometry.location.lat(),
+            lng: place.geometry.location.lng(),
+          });
+        }
       });
     }
 
@@ -62,9 +73,15 @@ export function SearchPanel({
         } else if (place?.name) {
           onDestinationChange(place.name);
         }
+        if (place?.geometry?.location) {
+          onDestCoordsChange?.({
+            lat: place.geometry.location.lat(),
+            lng: place.geometry.location.lng(),
+          });
+        }
       });
     }
-  }, [onOriginChange, onDestinationChange]);
+  }, [onOriginChange, onDestinationChange, onOriginCoordsChange, onDestCoordsChange]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -84,9 +101,8 @@ export function SearchPanel({
   };
 
   const handleSwap = () => {
-    const temp = origin;
     onOriginChange(destination);
-    onDestinationChange(temp);
+    onDestinationChange(origin);
   };
 
   return (
