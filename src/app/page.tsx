@@ -34,6 +34,7 @@ export default function Home() {
     riskLevel: number;
   } | null>(null);
   const [nightMode, setNightMode] = useState(false);
+  const [showTraffic, setShowTraffic] = useState(false);
 
   const sim = useSimulation({ routes });
 
@@ -137,6 +138,25 @@ export default function Home() {
     setUserZoneAlert(null);
   }, []);
 
+  const handleMarkerDrag = useCallback(
+    (latlng: LatLng, address: string, mode: "origin" | "destination") => {
+      if (mode === "origin") {
+        setOrigin(address);
+        setOriginCoords(latlng);
+      } else {
+        setDestination(address);
+        setDestCoords(latlng);
+      }
+      // Auto-rebuild route if both points are set
+      const newOrigin = mode === "origin" ? address : origin;
+      const newDest = mode === "destination" ? address : destination;
+      if (newOrigin.trim() && newDest.trim()) {
+        setTimeout(() => handleSearch(newOrigin, newDest), 300);
+      }
+    },
+    [origin, destination, handleSearch]
+  );
+
   const handleDemo = useCallback(() => {
     const demoOrigin = "Times Square, Manhattan, NY 10036";
     const demoDestination = "Brooklyn Bridge, New York, NY 10038";
@@ -231,6 +251,8 @@ export default function Home() {
             onToggleZones={() => setShowZones(!showZones)}
             nightMode={nightMode}
             onToggleNightMode={() => setNightMode(!nightMode)}
+            showTraffic={showTraffic}
+            onToggleTraffic={() => setShowTraffic(!showTraffic)}
           />
 
           <div className="bg-gradient-to-r from-amber-50 to-orange-50/30 border border-amber-200/60 rounded-xl p-4 flex gap-3.5 text-amber-800 shadow-sm">
@@ -248,6 +270,7 @@ export default function Home() {
         <MapView
           routes={routes}
           showZones={showZones}
+          showTraffic={showTraffic}
           pinMode={pinMode}
           nightMode={nightMode}
           simulationPoint={sim.simPoint}
@@ -256,6 +279,7 @@ export default function Home() {
           destCoords={destCoords}
           onMapPinDrop={handleMapPinDrop}
           onUserLocationChange={handleUserLocationChange}
+          onMarkerDrag={handleMarkerDrag}
         />
       </main>
 

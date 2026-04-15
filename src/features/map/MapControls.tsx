@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff, Moon, Sun } from "lucide-react";
+import { Eye, EyeOff, Moon, Sun, Car } from "lucide-react";
 import { getRiskColor } from "@/features/zones";
 
 const LEGEND_ITEMS = [
@@ -26,6 +26,8 @@ interface MapControlsProps {
   onToggleZones: () => void;
   nightMode: boolean;
   onToggleNightMode: () => void;
+  showTraffic: boolean;
+  onToggleTraffic: () => void;
 }
 
 export function MapControls({
@@ -33,6 +35,8 @@ export function MapControls({
   onToggleZones,
   nightMode,
   onToggleNightMode,
+  showTraffic,
+  onToggleTraffic,
 }: MapControlsProps) {
   return (
     <div className="bg-slate-50/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-200/60 shadow-sm">
@@ -55,6 +59,17 @@ export function MapControls({
               <Sun className="w-3.5 h-3.5" />
             )}
             {nightMode ? "Night" : "Day"}
+          </button>
+          <button
+            onClick={onToggleTraffic}
+            className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all duration-200 ${
+              showTraffic
+                ? "bg-green-100 text-green-700 shadow-sm hover:bg-green-200"
+                : "bg-slate-200 text-slate-500 hover:bg-slate-300"
+            }`}
+          >
+            <Car className="w-3.5 h-3.5" />
+            Traffic
           </button>
           <button
             onClick={onToggleZones}

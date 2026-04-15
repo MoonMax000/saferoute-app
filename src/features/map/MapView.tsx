@@ -15,37 +15,175 @@ import {
 const MAP_CONTAINER = { width: "100%", height: "100%" };
 const DEFAULT_CENTER = { lat: 40.7484, lng: -73.9857 };
 const DEFAULT_ZOOM = 13;
+const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "";
 
-const LIBRARIES: ("places" | "geometry")[] = ["places", "geometry"];
-
-const DAY_STYLES: google.maps.MapTypeStyle[] = [
-  { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", elementType: "labels", stylers: [{ visibility: "simplified" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#c9d7e4" }] },
-  { featureType: "landscape.man_made", elementType: "geometry", stylers: [{ color: "#f0f0f0" }] },
-];
-
-const NIGHT_STYLES: google.maps.MapTypeStyle[] = [
-  { elementType: "geometry", stylers: [{ color: "#1a1a2e" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#1a1a2e" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8a8a9a" }] },
-  { featureType: "administrative", elementType: "geometry", stylers: [{ color: "#2a2a3e" }] },
-  { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#2a2a3e" }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#1a1a2e" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3a3a4e" }] },
-  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1a1a2e" }] },
-  { featureType: "transit", elementType: "labels", stylers: [{ visibility: "simplified" }] },
-  { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2a2a3e" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1a2b" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#4a5568" }] },
-];
+const LIBRARIES: ("places" | "geometry" | "marker")[] = ["places", "geometry", "marker"];
 
 export type PinMode = "origin" | "destination" | null;
+
+/* ── Helper: create custom HTML pin element ── */
+function createPinElement(opts: {
+  color: string;
+  glyphColor?: string;
+  label?: string;
+  scale?: number;
+  draggable?: boolean;
+}): HTMLElement {
+  const { color, glyphColor = "#fff", label, scale = 1 } = opts;
+  const size = Math.round(40 * scale);
+  const wrapper = document.createElement("div");
+  wrapper.style.cursor = opts.draggable ? "grab" : "pointer";
+  wrapper.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.35));transition:transform 0.2s ease;">
+      <div style="
+        width:${size}px;height:${size}px;
+        border-radius:50% 50% 50% 0;
+        background:${color};
+        transform:rotate(-45deg);
+        display:flex;align-items:center;justify-content:center;
+        border:3px solid #fff;
+        box-shadow:0 2px 8px rgba(0,0,0,0.2);
+      ">
+        <span style="
+          transform:rotate(45deg);
+          color:${glyphColor};
+          font-weight:700;
+          font-size:${Math.round(14 * scale)}px;
+          font-family:system-ui,sans-serif;
+          line-height:1;
+        ">${label ?? ""}</span>
+      </div>
+      <div style="
+        width:3px;height:${Math.round(8 * scale)}px;
+        background:${color};
+        border-radius:0 0 2px 2px;
+        margin-top:-2px;
+      "></div>
+    </div>
+  `;
+  wrapper.addEventListener("mouseenter", () => {
+    const inner = wrapper.firstElementChild as HTMLElement;
+    if (inner) inner.style.transform = "scale(1.15)";
+  });
+  wrapper.addEventListener("mouseleave", () => {
+    const inner = wrapper.firstElementChild as HTMLElement;
+    if (inner) inner.style.transform = "scale(1)";
+  });
+  return wrapper;
+}
+
+/* ── Helper: create route endpoint marker (circle) ── */
+function createRouteEndpointEl(color: string, label: string): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.style.cursor = "grab";
+  wrapper.innerHTML = `
+    <div style="
+      display:flex;align-items:center;justify-content:center;
+      width:28px;height:28px;
+      border-radius:50%;
+      background:${color};
+      border:3px solid #fff;
+      box-shadow:0 2px 10px rgba(0,0,0,0.3);
+      transition:transform 0.15s ease;
+      font-family:system-ui,sans-serif;
+      font-weight:700;
+      font-size:11px;
+      color:#fff;
+    ">${label}</div>
+  `;
+  wrapper.addEventListener("mouseenter", () => {
+    const inner = wrapper.firstElementChild as HTMLElement;
+    if (inner) inner.style.transform = "scale(1.2)";
+  });
+  wrapper.addEventListener("mouseleave", () => {
+    const inner = wrapper.firstElementChild as HTMLElement;
+    if (inner) inner.style.transform = "scale(1)";
+  });
+  return wrapper;
+}
+
+/* ── Helper: create simulation car marker ── */
+function createSimMarkerEl(): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = `
+    <div style="
+      display:flex;align-items:center;justify-content:center;
+      width:36px;height:36px;
+      border-radius:50%;
+      background:linear-gradient(135deg,#6366f1,#8b5cf6);
+      border:3px solid #fff;
+      box-shadow:0 0 20px rgba(99,102,241,0.5), 0 2px 10px rgba(0,0,0,0.3);
+      animation:sim-pulse 2s ease-in-out infinite;
+    ">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L19 21L12 17L5 21L12 2Z"/>
+      </svg>
+    </div>
+  `;
+  // Add pulse animation style
+  if (!document.getElementById("sim-pulse-style")) {
+    const style = document.createElement("style");
+    style.id = "sim-pulse-style";
+    style.textContent = `
+      @keyframes sim-pulse {
+        0%, 100% { box-shadow: 0 0 20px rgba(99,102,241,0.5), 0 2px 10px rgba(0,0,0,0.3); }
+        50% { box-shadow: 0 0 35px rgba(99,102,241,0.7), 0 2px 15px rgba(0,0,0,0.3); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+  return wrapper;
+}
+
+/* ── Helper: create user location marker ── */
+function createUserLocationEl(): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = `
+    <div style="position:relative;display:flex;align-items:center;justify-content:center;width:40px;height:40px;">
+      <div style="
+        position:absolute;
+        width:40px;height:40px;
+        border-radius:50%;
+        background:rgba(59,130,246,0.15);
+        border:1px solid rgba(59,130,246,0.3);
+        animation:user-pulse 3s ease-in-out infinite;
+      "></div>
+      <div style="
+        width:16px;height:16px;
+        border-radius:50%;
+        background:#3b82f6;
+        border:3px solid #fff;
+        box-shadow:0 2px 6px rgba(0,0,0,0.3);
+        z-index:1;
+      "></div>
+    </div>
+  `;
+  if (!document.getElementById("user-pulse-style")) {
+    const style = document.createElement("style");
+    style.id = "user-pulse-style";
+    style.textContent = `
+      @keyframes user-pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.3); opacity: 0.6; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+  return wrapper;
+}
+
+/* ── Helper: extract lat/lng from AdvancedMarkerElement position ── */
+function getPos(p: google.maps.LatLng | google.maps.LatLngLiteral | null | undefined): { lat: number; lng: number } | null {
+  if (!p) return null;
+  const lat = typeof (p as google.maps.LatLng).lat === "function" ? (p as google.maps.LatLng).lat() : (p as google.maps.LatLngLiteral).lat;
+  const lng = typeof (p as google.maps.LatLng).lng === "function" ? (p as google.maps.LatLng).lng() : (p as google.maps.LatLngLiteral).lng;
+  return { lat, lng };
+}
 
 interface MapViewProps {
   routes: RouteOption[];
   showZones: boolean;
+  showTraffic: boolean;
   pinMode: PinMode;
   nightMode: boolean;
   simulationPoint: LatLng | null;
@@ -54,11 +192,13 @@ interface MapViewProps {
   destCoords?: LatLng | null;
   onMapPinDrop?: (latlng: LatLng, address: string, mode: PinMode) => void;
   onUserLocationChange?: (latlng: LatLng | null) => void;
+  onMarkerDrag?: (latlng: LatLng, address: string, mode: "origin" | "destination") => void;
 }
 
 export function MapView({
   routes,
   showZones,
+  showTraffic,
   pinMode,
   nightMode,
   simulationPoint,
@@ -67,6 +207,7 @@ export function MapView({
   destCoords,
   onMapPinDrop,
   onUserLocationChange,
+  onMarkerDrag,
 }: MapViewProps) {
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
@@ -76,17 +217,35 @@ export function MapView({
   const mapRef = useRef<google.maps.Map | null>(null);
   const polylinesRef = useRef<google.maps.Polyline[]>([]);
   const polygonsRef = useRef<google.maps.Polygon[]>([]);
-  const markersRef = useRef<google.maps.Marker[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const markersRef = useRef<any[]>([]);
   const infoWindowsRef = useRef<google.maps.InfoWindow[]>([]);
-  const userMarkerRef = useRef<google.maps.Marker | null>(null);
-  const userPulseRef = useRef<google.maps.Marker | null>(null);
-  const simMarkerRef = useRef<google.maps.Marker | null>(null);
-  const simPulseRef = useRef<google.maps.Marker | null>(null);
-  const originPreviewRef = useRef<google.maps.Marker | null>(null);
-  const destPreviewRef = useRef<google.maps.Marker | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const userMarkerRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const simMarkerRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const originPreviewRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const destPreviewRef = useRef<any>(null);
+  const trafficLayerRef = useRef<google.maps.TrafficLayer | null>(null);
   const userLocationRef = useRef<LatLng | null>(null);
   const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
   const [mapReady, setMapReady] = useState(false);
+
+  const reverseGeocode = useCallback(
+    (lat: number, lng: number, mode: "origin" | "destination") => {
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        const address =
+          status === "OK" && results?.[0]
+            ? results[0].formatted_address
+            : `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        onMarkerDrag?.({ lat, lng }, address, mode);
+      });
+    },
+    [onMarkerDrag]
+  );
 
   const handleCenterOnMe = useCallback(() => {
     if (userLocationRef.current && mapRef.current) {
@@ -95,6 +254,7 @@ export function MapView({
     }
   }, []);
 
+  // User location tracking
   useEffect(() => {
     if (!navigator.geolocation) return;
 
@@ -108,41 +268,18 @@ export function MapView({
         });
         onUserLocationChange?.(loc);
 
-        if (mapRef.current) {
-          const position = new google.maps.LatLng(loc.lat, loc.lng);
+        if (mapRef.current && google.maps.marker?.AdvancedMarkerElement) {
+          const position = { lat: loc.lat, lng: loc.lng };
           if (!userMarkerRef.current) {
-            userPulseRef.current = new google.maps.Marker({
+            userMarkerRef.current = new google.maps.marker.AdvancedMarkerElement({
               position,
               map: mapRef.current,
-              icon: {
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 20,
-                fillColor: "#3b82f6",
-                fillOpacity: 0.15,
-                strokeColor: "#3b82f6",
-                strokeOpacity: 0.3,
-                strokeWeight: 1,
-              },
-              zIndex: 15,
-              clickable: false,
-            });
-            userMarkerRef.current = new google.maps.Marker({
-              position,
-              map: mapRef.current,
-              icon: {
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 8,
-                fillColor: "#3b82f6",
-                fillOpacity: 1,
-                strokeColor: "#ffffff",
-                strokeWeight: 3,
-              },
+              content: createUserLocationEl(),
               zIndex: 16,
               title: "Your location",
             });
           } else {
-            userMarkerRef.current.setPosition(position);
-            userPulseRef.current?.setPosition(position);
+            userMarkerRef.current.position = position;
           }
         }
       },
@@ -156,7 +293,7 @@ export function MapView({
   const clearPolylines = useCallback(() => {
     polylinesRef.current.forEach((p) => p.setMap(null));
     polylinesRef.current = [];
-    markersRef.current.forEach((m) => m.setMap(null));
+    markersRef.current.forEach((m) => { m.map = null; });
     markersRef.current = [];
   }, []);
 
@@ -195,68 +332,61 @@ export function MapView({
 
   // Preview markers for origin/destination before route search
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapRef.current || !google.maps.marker?.AdvancedMarkerElement) return;
     const map = mapRef.current;
     const hasRoutes = routes.length > 0;
+    const AME = google.maps.marker.AdvancedMarkerElement;
 
     // Origin preview marker
     if (originCoords && !hasRoutes) {
-      const pos = new google.maps.LatLng(originCoords.lat, originCoords.lng);
+      const pos = { lat: originCoords.lat, lng: originCoords.lng };
       if (!originPreviewRef.current) {
-        originPreviewRef.current = new google.maps.Marker({
+        originPreviewRef.current = new AME({
           position: pos,
           map,
-          icon: {
-            path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
-            fillColor: "#10b981",
-            fillOpacity: 1,
-            strokeColor: "#ffffff",
-            strokeWeight: 2,
-            scale: 2,
-            anchor: new google.maps.Point(12, 24),
-          },
+          gmpDraggable: true,
+          content: createPinElement({ color: "#10b981", label: "A", draggable: true }),
           zIndex: 30,
-          title: "Start",
-          animation: google.maps.Animation.DROP,
+          title: "Start (drag to move)",
+        });
+        originPreviewRef.current.addEventListener("gmp-dragend", () => {
+          const p = getPos(originPreviewRef.current?.position);
+          if (p) reverseGeocode(p.lat, p.lng, "origin");
         });
       } else {
-        originPreviewRef.current.setPosition(pos);
-        originPreviewRef.current.setMap(map);
+        originPreviewRef.current.position = pos;
+        originPreviewRef.current.map = map;
       }
     } else {
-      originPreviewRef.current?.setMap(null);
+      if (originPreviewRef.current) originPreviewRef.current.map = null;
       if (hasRoutes) originPreviewRef.current = null;
     }
 
     // Destination preview marker
     if (destCoords && !hasRoutes) {
-      const pos = new google.maps.LatLng(destCoords.lat, destCoords.lng);
+      const pos = { lat: destCoords.lat, lng: destCoords.lng };
       if (!destPreviewRef.current) {
-        destPreviewRef.current = new google.maps.Marker({
+        destPreviewRef.current = new AME({
           position: pos,
           map,
-          icon: {
-            path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
-            fillColor: "#f43f5e",
-            fillOpacity: 1,
-            strokeColor: "#ffffff",
-            strokeWeight: 2,
-            scale: 2,
-            anchor: new google.maps.Point(12, 24),
-          },
+          gmpDraggable: true,
+          content: createPinElement({ color: "#f43f5e", label: "B", draggable: true }),
           zIndex: 30,
-          title: "Destination",
-          animation: google.maps.Animation.DROP,
+          title: "Destination (drag to move)",
+        });
+        destPreviewRef.current.addEventListener("gmp-dragend", () => {
+          const p = getPos(destPreviewRef.current?.position);
+          if (p) reverseGeocode(p.lat, p.lng, "destination");
         });
       } else {
-        destPreviewRef.current.setPosition(pos);
-        destPreviewRef.current.setMap(map);
+        destPreviewRef.current.position = pos;
+        destPreviewRef.current.map = map;
       }
     } else {
-      destPreviewRef.current?.setMap(null);
+      if (destPreviewRef.current) destPreviewRef.current.map = null;
       if (hasRoutes) destPreviewRef.current = null;
     }
-  }, [originCoords, destCoords, routes]);
+  }, [originCoords, destCoords, routes, reverseGeocode]);
 
   // Draw routes
   useEffect(() => {
@@ -266,6 +396,7 @@ export function MapView({
     const map = mapRef.current;
     const bounds = new google.maps.LatLngBounds();
     let hasBounds = false;
+    const AME = google.maps.marker?.AdvancedMarkerElement;
 
     routes.forEach((option) => {
       const isSelected = option.selected;
@@ -303,39 +434,35 @@ export function MapView({
         }
       });
 
-      if (isSelected && option.route.polylinePath.length > 1) {
+      if (isSelected && option.route.polylinePath.length > 1 && AME) {
         const startPoint = option.route.polylinePath[0];
         const endPoint =
           option.route.polylinePath[option.route.polylinePath.length - 1];
 
-        const startMarker = new google.maps.Marker({
+        const startMarker = new AME({
           position: startPoint,
           map,
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 12,
-            fillColor: "#10b981",
-            fillOpacity: 1,
-            strokeColor: "#ffffff",
-            strokeWeight: 3,
-          },
+          gmpDraggable: true,
+          content: createRouteEndpointEl("#10b981", "A"),
           zIndex: 20,
-          title: "Start",
+          title: "Start (drag to reroute)",
+        });
+        startMarker.addEventListener("gmp-dragend", () => {
+          const p = getPos(startMarker.position);
+          if (p) reverseGeocode(p.lat, p.lng, "origin");
         });
 
-        const endMarker = new google.maps.Marker({
+        const endMarker = new AME({
           position: endPoint,
           map,
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 12,
-            fillColor: "#f43f5e",
-            fillOpacity: 1,
-            strokeColor: "#ffffff",
-            strokeWeight: 3,
-          },
+          gmpDraggable: true,
+          content: createRouteEndpointEl("#f43f5e", "B"),
           zIndex: 20,
-          title: "Destination",
+          title: "Destination (drag to reroute)",
+        });
+        endMarker.addEventListener("gmp-dragend", () => {
+          const p = getPos(endMarker.position);
+          if (p) reverseGeocode(p.lat, p.lng, "destination");
         });
 
         markersRef.current.push(startMarker, endMarker);
@@ -345,7 +472,7 @@ export function MapView({
     if (hasBounds) {
       map.fitBounds(bounds, { top: 60, bottom: 60, left: 60, right: 60 });
     }
-  }, [routes, clearPolylines]);
+  }, [routes, clearPolylines, reverseGeocode]);
 
   // Draw risk zone polygons
   useEffect(() => {
@@ -396,67 +523,59 @@ export function MapView({
     });
   }, [showZones, clearPolygons, mapReady]);
 
+  // Traffic layer
   useEffect(() => {
     if (!mapRef.current) return;
-    mapRef.current.setOptions({ styles: nightMode ? NIGHT_STYLES : DAY_STYLES });
-  }, [nightMode]);
+    if (showTraffic) {
+      if (!trafficLayerRef.current) {
+        trafficLayerRef.current = new google.maps.TrafficLayer();
+      }
+      trafficLayerRef.current.setMap(mapRef.current);
+    } else {
+      trafficLayerRef.current?.setMap(null);
+    }
+  }, [showTraffic, mapReady]);
 
   // Simulation marker
   useEffect(() => {
     if (!mapRef.current) return;
+    const AME = google.maps.marker?.AdvancedMarkerElement;
 
     if (!simulationPoint) {
-      simMarkerRef.current?.setMap(null);
-      simPulseRef.current?.setMap(null);
+      if (simMarkerRef.current) simMarkerRef.current.map = null;
       simMarkerRef.current = null;
-      simPulseRef.current = null;
       return;
     }
 
-    const pos = new google.maps.LatLng(simulationPoint.lat, simulationPoint.lng);
+    const pos = { lat: simulationPoint.lat, lng: simulationPoint.lng };
 
-    if (!simMarkerRef.current) {
-      simPulseRef.current = new google.maps.Marker({
+    if (!simMarkerRef.current && AME) {
+      const el = createSimMarkerEl();
+      simMarkerRef.current = new AME({
         position: pos,
         map: mapRef.current,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 24,
-          fillColor: "#6366f1",
-          fillOpacity: 0.2,
-          strokeColor: "#6366f1",
-          strokeOpacity: 0.4,
-          strokeWeight: 2,
-        },
-        zIndex: 25,
-        clickable: false,
-      });
-      simMarkerRef.current = new google.maps.Marker({
-        position: pos,
-        map: mapRef.current,
-        icon: {
-          path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-          scale: 6,
-          fillColor: "#6366f1",
-          fillOpacity: 1,
-          strokeColor: "#ffffff",
-          strokeWeight: 2,
-          rotation: simulationHeading,
-        },
+        content: el,
         zIndex: 26,
       });
-    } else {
-      simMarkerRef.current.setPosition(pos);
-      simPulseRef.current?.setPosition(pos);
-      const icon = simMarkerRef.current.getIcon() as google.maps.Symbol;
-      if (icon) {
-        simMarkerRef.current.setIcon({ ...icon, rotation: simulationHeading });
+    } else if (simMarkerRef.current) {
+      simMarkerRef.current.position = pos;
+      // Rotate the arrow SVG
+      const svg = simMarkerRef.current.content?.querySelector?.("svg");
+      if (svg) {
+        svg.style.transform = `rotate(${simulationHeading}deg)`;
+        svg.style.transition = "transform 0.3s ease";
       }
     }
   }, [simulationPoint, simulationHeading]);
 
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
+    // Reset refs since map was recreated (e.g. night mode toggle)
+    originPreviewRef.current = null;
+    destPreviewRef.current = null;
+    userMarkerRef.current = null;
+    simMarkerRef.current = null;
+    trafficLayerRef.current = null;
     setMapReady(true);
   }, []);
 
@@ -479,19 +598,22 @@ export function MapView({
   return (
     <>
       <GoogleMap
+        key={nightMode ? "dark" : "light"}
         mapContainerStyle={MAP_CONTAINER}
         center={mapCenter}
         zoom={DEFAULT_ZOOM}
         onLoad={onMapLoad}
         onClick={handleMapClick}
         options={{
-          styles: nightMode ? NIGHT_STYLES : DAY_STYLES,
+          mapId: MAP_ID,
           disableDefaultUI: false,
           zoomControl: true,
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: true,
           gestureHandling: "greedy",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          colorScheme: nightMode ? "DARK" : "LIGHT" as any,
         }}
       />
       <button
