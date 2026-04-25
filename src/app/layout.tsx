@@ -8,9 +8,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "SafeRoute - Risk-Aware Navigation",
+  title: "NavShieldAI — Risk-Aware Navigation",
   description:
-    "Navigate safely with real-time risk assessment and color-coded routing",
+    "Compare safer routes, catch destination risk, and track trips live. Phase 1 one-city demo.",
 };
 
 export default function RootLayout({

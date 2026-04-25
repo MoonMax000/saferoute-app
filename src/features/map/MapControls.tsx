@@ -1,25 +1,7 @@
 "use client";
 
 import { Eye, EyeOff, Moon, Sun, Car } from "lucide-react";
-import { getRiskColor } from "@/features/zones";
-
-const LEGEND_ITEMS = [
-  { label: "Very Safe", score: 1 },
-  { label: "Safe", score: 3 },
-  { label: "Moderate", score: 5 },
-  { label: "Elevated", score: 6 },
-  { label: "High Risk", score: 7 },
-  { label: "Very High", score: 9 },
-];
-
-const BORDER_COLORS: Record<number, string> = {
-  1: "border-emerald-600",
-  3: "border-lime-600",
-  5: "border-yellow-500",
-  6: "border-orange-600",
-  7: "border-red-600",
-  9: "border-rose-950",
-};
+import { RISK_CATEGORIES } from "@/features/risk";
 
 interface MapControlsProps {
   showZones: boolean;
@@ -84,19 +66,17 @@ export function MapControls({
             ) : (
               <EyeOff className="w-3.5 h-3.5" />
             )}
-            Zones
+            Risk
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-y-3.5 gap-x-4">
-        {LEGEND_ITEMS.map((item) => (
-          <div key={item.label} className="flex items-center gap-2.5">
-            <div
-              className={`w-3.5 h-3.5 rounded shadow-sm flex-shrink-0 border ${
-                BORDER_COLORS[item.score] ?? ""
-              }`}
-              style={{ backgroundColor: getRiskColor(item.score) }}
+      <div className="flex flex-wrap gap-x-4 gap-y-2.5">
+        {RISK_CATEGORIES.map((item) => (
+          <div key={item.label} className="flex items-center gap-2">
+            <span
+              className="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-black/5"
+              style={{ backgroundColor: item.colour }}
             />
             <span className="text-[12px] font-medium text-slate-600 whitespace-nowrap">
               {item.label}

@@ -1,25 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { GoogleMap, useJsApiLoader } from "@react-google-maps/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GoogleMap } from "@react-google-maps/api";
 import { Crosshair } from "lucide-react";
 import type { LatLng } from "@/shared/types";
 import type { RouteOption } from "@/features/routing";
 import {
-  getZones,
-  getZoneFillColor,
-  getZoneStrokeColor,
-  getRiskColor,
-} from "@/features/zones";
+  getCityRiskCells,
+  effectiveRiskFill,
+  effectiveRiskStroke,
+} from "@/features/risk";
+import type { Incident, IncidentPlacementMode } from "@/features/incidents";
+import { INCIDENT_TYPES } from "@/features/incidents";
+import { clientEnv } from "@/lib/env";
+import { getDemoCity, useMapsApi } from "@/lib/google";
 
 const MAP_CONTAINER = { width: "100%", height: "100%" };
-const DEFAULT_CENTER = { lat: 40.7484, lng: -73.9857 };
-const DEFAULT_ZOOM = 13;
-const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "";
-
-const LIBRARIES: ("places" | "geometry" | "marker")[] = ["places", "geometry", "marker"];
+const MAP_ID = clientEnv.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "";
 
 export type PinMode = "origin" | "destination" | null;
+
+/** Map effective risk score → user-facing category label. */
+function riskCategory(effective: number): string {
+  if (effective <= 3.2) return "Looks normal";
+  if (effective <= 5.2) return "Use caution";
+  if (effective <= 7) return "Higher-risk area";
+  return "High-risk area";
+}
 
 /* ── Helper: create custom HTML pin element ── */
 function createPinElement(opts: {
@@ -172,6 +179,32 @@ function createUserLocationEl(): HTMLElement {
   return wrapper;
 }
 
+/* ── Helper: incident marker pill (icon + colour by type) ── */
+function createIncidentEl(opts: {
+  type: keyof typeof INCIDENT_TYPES;
+}): HTMLElement {
+  const cfg = INCIDENT_TYPES[opts.type];
+  const wrapper = document.createElement("div");
+  wrapper.style.cursor = "pointer";
+  // Inline SVG glyph per incident type (kept small to bundle).
+  const glyph =
+    opts.type === "robbery"
+      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`
+      : opts.type === "police"
+        ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`
+        : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M5 20V8h4v12"/><path d="M15 20V8h4v12"/></svg>`;
+  wrapper.innerHTML = `
+    <div style="
+      display:flex;align-items:center;justify-content:center;
+      width:30px;height:30px;border-radius:50%;
+      background:${cfg.stroke};
+      border:3px solid white;
+      box-shadow:0 2px 10px rgba(0,0,0,0.25);
+    ">${glyph}</div>
+  `;
+  return wrapper;
+}
+
 /* ── Helper: extract lat/lng from AdvancedMarkerElement position ── */
 function getPos(p: google.maps.LatLng | google.maps.LatLngLiteral | null | undefined): { lat: number; lng: number } | null {
   if (!p) return null;
@@ -190,9 +223,13 @@ interface MapViewProps {
   simulationHeading: number;
   originCoords?: LatLng | null;
   destCoords?: LatLng | null;
+  incidents: Incident[];
+  incidentPlacementMode: IncidentPlacementMode;
   onMapPinDrop?: (latlng: LatLng, address: string, mode: PinMode) => void;
   onUserLocationChange?: (latlng: LatLng | null) => void;
   onMarkerDrag?: (latlng: LatLng, address: string, mode: "origin" | "destination") => void;
+  onIncidentPlace?: (latlng: LatLng) => void;
+  onIncidentRemove?: (id: string) => void;
 }
 
 export function MapView({
@@ -205,14 +242,19 @@ export function MapView({
   simulationHeading,
   originCoords,
   destCoords,
+  incidents,
+  incidentPlacementMode,
   onMapPinDrop,
   onUserLocationChange,
   onMarkerDrag,
+  onIncidentPlace,
+  onIncidentRemove,
 }: MapViewProps) {
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
-    libraries: LIBRARIES,
-  });
+  const { isLoaded } = useMapsApi();
+  const city = useMemo(
+    () => getDemoCity(clientEnv.NEXT_PUBLIC_DEMO_CITY),
+    [],
+  );
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const polylinesRef = useRef<google.maps.Polyline[]>([]);
@@ -231,7 +273,13 @@ export function MapView({
   const trafficLayerRef = useRef<google.maps.TrafficLayer | null>(null);
   const userLocationRef = useRef<LatLng | null>(null);
   const hadRoutesRef = useRef(false);
-  const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const incidentMarkersRef = useRef<Map<string, any>>(new Map());
+  const incidentCirclesRef = useRef<Map<string, google.maps.Circle>>(new Map());
+  const incidentInfoRef = useRef<Map<string, google.maps.InfoWindow>>(
+    new Map(),
+  );
+  const [mapCenter, setMapCenter] = useState<LatLng>(city.center);
   const [mapInstanceId, setMapInstanceId] = useState(0);
 
   const reverseGeocode = useCallback(
@@ -264,7 +312,7 @@ export function MapView({
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         userLocationRef.current = loc;
         setMapCenter((prev) => {
-          if (prev === DEFAULT_CENTER) return loc;
+          if (prev === city.center) return loc;
           return prev;
         });
         onUserLocationChange?.(loc);
@@ -289,7 +337,7 @@ export function MapView({
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [onUserLocationChange]);
+  }, [onUserLocationChange, city.center]);
 
   const clearPolylines = useCallback(() => {
     polylinesRef.current.forEach((p) => p.setMap(null));
@@ -307,10 +355,18 @@ export function MapView({
 
   const handleMapClick = useCallback(
     (e: google.maps.MapMouseEvent) => {
-      if (!pinMode || !e.latLng || !onMapPinDrop) return;
-
+      if (!e.latLng) return;
       const lat = e.latLng.lat();
       const lng = e.latLng.lng();
+
+      // Incident placement takes priority — once active the user is
+      // committed to either placing or cancelling.
+      if (incidentPlacementMode && onIncidentPlace) {
+        onIncidentPlace({ lat, lng });
+        return;
+      }
+
+      if (!pinMode || !onMapPinDrop) return;
 
       const geocoder = new google.maps.Geocoder();
       geocoder.geocode({ location: { lat, lng } }, (results, status) => {
@@ -321,15 +377,16 @@ export function MapView({
         onMapPinDrop({ lat, lng }, address, pinMode);
       });
     },
-    [pinMode, onMapPinDrop]
+    [pinMode, onMapPinDrop, incidentPlacementMode, onIncidentPlace],
   );
 
   useEffect(() => {
     if (!mapRef.current) return;
     mapRef.current.setOptions({
-      draggableCursor: pinMode ? "crosshair" : undefined,
+      draggableCursor:
+        pinMode || incidentPlacementMode ? "crosshair" : undefined,
     });
-  }, [pinMode]);
+  }, [pinMode, incidentPlacementMode]);
 
   // Preview markers for origin/destination before route search
   useEffect(() => {
@@ -479,7 +536,7 @@ export function MapView({
     }
   }, [routes, clearPolylines, reverseGeocode, mapInstanceId]);
 
-  // Draw risk zone polygons
+  // Draw risk overlay (cells from features/risk, day/night-aware)
   useEffect(() => {
     if (!mapRef.current) return;
     clearPolygons();
@@ -487,32 +544,32 @@ export function MapView({
     if (!showZones) return;
 
     const map = mapRef.current;
-    const zones = getZones();
+    const cells = getCityRiskCells(clientEnv.NEXT_PUBLIC_DEMO_CITY);
+    const time: "day" | "night" = nightMode ? "night" : "day";
 
-    zones.forEach((zone) => {
-      if (!zone.polygon) return;
+    cells.forEach((cell) => {
+      const effective =
+        cell.baseDayRisk * (time === "night" ? cell.nightMultiplier : 1);
 
       const polygon = new google.maps.Polygon({
-        paths: zone.polygon.map((p) => ({ lat: p.lat, lng: p.lng })),
-        fillColor: getZoneFillColor(zone.riskLevel),
+        paths: cell.polygon.map((p) => ({ lat: p.lat, lng: p.lng })),
+        fillColor: effectiveRiskFill(effective),
         fillOpacity: 1,
-        strokeColor: getZoneStrokeColor(zone.riskLevel),
-        strokeWeight: 2,
+        strokeColor: effectiveRiskStroke(effective),
+        strokeWeight: 1.5,
         strokeOpacity: 1,
         map,
         clickable: true,
         zIndex: 1,
       });
 
-      const riskColor = getRiskColor(zone.riskLevel);
+      // Categorical, no numeric scores leaked into the UI.
+      const category = riskCategory(effective);
       const infoWindow = new google.maps.InfoWindow({
         content: `
-          <div style="padding:8px 12px;font-family:system-ui,sans-serif;">
-            <div style="font-weight:600;font-size:14px;margin-bottom:6px;">${zone.label}</div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${riskColor}"></span>
-              <span style="font-size:13px;color:#555">Risk: ${zone.riskLevel}/10</span>
-            </div>
+          <div style="padding:8px 12px;font-family:system-ui,sans-serif;max-width:240px;">
+            <div style="font-weight:600;font-size:14px;margin-bottom:6px;">${cell.label}</div>
+            <div style="font-size:12px;color:#555;">${category}</div>
           </div>
         `,
       });
@@ -526,7 +583,7 @@ export function MapView({
       polygonsRef.current.push(polygon);
       infoWindowsRef.current.push(infoWindow);
     });
-  }, [showZones, clearPolygons, mapInstanceId]);
+  }, [showZones, clearPolygons, mapInstanceId, nightMode]);
 
   // Traffic layer
   useEffect(() => {
@@ -573,6 +630,99 @@ export function MapView({
     }
   }, [simulationPoint, simulationHeading]);
 
+  // ── Incident markers + radius circles ──
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const map = mapRef.current;
+    const AME = google.maps.marker?.AdvancedMarkerElement;
+    if (!AME) return;
+
+    const incidentMap = incidentMarkersRef.current;
+    const circleMap = incidentCirclesRef.current;
+    const infoMap = incidentInfoRef.current;
+
+    const seen = new Set<string>();
+
+    incidents.forEach((incident) => {
+      seen.add(incident.id);
+      const cfg = INCIDENT_TYPES[incident.type];
+
+      // Marker
+      let marker = incidentMap.get(incident.id);
+      if (!marker) {
+        marker = new AME({
+          position: incident.center,
+          map,
+          content: createIncidentEl({ type: incident.type }),
+          zIndex: 22,
+          title: cfg.label,
+        });
+        incidentMap.set(incident.id, marker);
+
+        const info = new google.maps.InfoWindow({});
+        infoMap.set(incident.id, info);
+        marker.addEventListener("gmp-click", () => {
+          infoMap.forEach((w) => w.close());
+          info.setContent(`
+            <div style="padding:6px 8px;font-family:system-ui,sans-serif;max-width:220px;">
+              <div style="font-weight:600;font-size:13px;color:#0f172a;">${cfg.label}</div>
+              <div style="font-size:11px;color:#64748b;margin-top:2px;">Reported in this area.</div>
+              <button id="rm-${incident.id}" style="margin-top:6px;font-size:11px;font-weight:600;color:#be123c;background:none;border:none;cursor:pointer;padding:0;">
+                Remove this report
+              </button>
+            </div>
+          `);
+          info.setPosition(incident.center);
+          info.open(map);
+          // Wire the remove button after the InfoWindow is in the DOM.
+          google.maps.event.addListenerOnce(info, "domready", () => {
+            const btn = document.getElementById(`rm-${incident.id}`);
+            btn?.addEventListener("click", () => {
+              info.close();
+              onIncidentRemove?.(incident.id);
+            });
+          });
+        });
+      } else {
+        marker.position = incident.center;
+        marker.map = map;
+      }
+
+      // Radius circle
+      let circle = circleMap.get(incident.id);
+      if (!circle) {
+        circle = new google.maps.Circle({
+          map,
+          center: incident.center,
+          radius: incident.radius,
+          fillColor: cfg.stroke,
+          fillOpacity: 0.16,
+          strokeColor: cfg.stroke,
+          strokeOpacity: 0.7,
+          strokeWeight: 1.5,
+          clickable: false,
+          zIndex: 5,
+        });
+        circleMap.set(incident.id, circle);
+      } else {
+        circle.setCenter(incident.center);
+        circle.setRadius(incident.radius);
+        circle.setMap(map);
+      }
+    });
+
+    // Drop anything no longer in the prop list.
+    incidentMap.forEach((marker, id) => {
+      if (seen.has(id)) return;
+      marker.map = null;
+      incidentMap.delete(id);
+      circleMap.get(id)?.setMap(null);
+      circleMap.delete(id);
+      infoMap.get(id)?.close();
+      infoMap.delete(id);
+    });
+  }, [incidents, mapInstanceId, onIncidentRemove]);
+
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     // Reset refs since map was recreated (e.g. night mode toggle)
@@ -585,6 +735,12 @@ export function MapView({
     userMarkerRef.current = null;
     simMarkerRef.current = null;
     trafficLayerRef.current = null;
+    incidentMarkersRef.current.forEach((m) => (m.map = null));
+    incidentMarkersRef.current.clear();
+    incidentCirclesRef.current.forEach((c) => c.setMap(null));
+    incidentCirclesRef.current.clear();
+    incidentInfoRef.current.forEach((w) => w.close());
+    incidentInfoRef.current.clear();
     hadRoutesRef.current = false;
     // Increment counter to re-trigger all drawing effects
     setMapInstanceId((prev) => prev + 1);
@@ -612,7 +768,7 @@ export function MapView({
         key={nightMode ? "dark" : "light"}
         mapContainerStyle={MAP_CONTAINER}
         center={mapCenter}
-        zoom={DEFAULT_ZOOM}
+        zoom={city.zoom}
         onLoad={onMapLoad}
         onClick={handleMapClick}
         options={{
@@ -652,6 +808,29 @@ export function MapView({
           <span className="font-semibold text-slate-700 text-[15px]">
             Click on the map to set{" "}
             {pinMode === "origin" ? "starting point" : "destination"}
+          </span>
+        </div>
+      )}
+
+      {incidentPlacementMode && !pinMode && (
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 z-30 bg-white/90 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.12)] border border-white/50 py-3.5 px-6 rounded-full flex items-center gap-3.5 animate-fade-in">
+          <div className="relative flex items-center justify-center w-4 h-4">
+            <div
+              className="absolute inset-0 rounded-full animate-ping opacity-75"
+              style={{
+                backgroundColor: INCIDENT_TYPES[incidentPlacementMode].stroke,
+              }}
+            />
+            <div
+              className="relative w-3 h-3 rounded-full shadow-md"
+              style={{
+                backgroundColor: INCIDENT_TYPES[incidentPlacementMode].stroke,
+              }}
+            />
+          </div>
+          <span className="font-semibold text-slate-700 text-[15px]">
+            Click on the map to mark a{" "}
+            {INCIDENT_TYPES[incidentPlacementMode].shortLabel.toLowerCase()}
           </span>
         </div>
       )}

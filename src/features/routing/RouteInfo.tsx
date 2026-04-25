@@ -1,13 +1,27 @@
 "use client";
 
-import { Clock, Map as MapIcon, AlertTriangle } from "lucide-react";
+import { Clock, Map as MapIcon, ShieldCheck, Zap, Scale } from "lucide-react";
 import { getRiskColor, getRiskLabel } from "@/features/zones";
-import type { RouteOption } from "./route.types";
+import type { RouteCategory, RouteOption } from "./route.types";
 
 interface RouteInfoProps {
   routes: RouteOption[];
   onSelectRoute: (index: number) => void;
 }
+
+const CATEGORY_DOT: Record<RouteCategory, string> = {
+  safest: "bg-emerald-500 shadow-emerald-500/40",
+  balanced: "bg-amber-400 shadow-amber-400/40",
+  fastest: "bg-rose-500 shadow-rose-500/40",
+  recommended: "bg-indigo-500 shadow-indigo-500/40",
+};
+
+const CATEGORY_ICON: Record<RouteCategory, typeof ShieldCheck> = {
+  safest: ShieldCheck,
+  balanced: Scale,
+  fastest: Zap,
+  recommended: ShieldCheck,
+};
 
 export function RouteInfo({ routes, onSelectRoute }: RouteInfoProps) {
   if (routes.length === 0) return null;
@@ -19,29 +33,21 @@ export function RouteInfo({ routes, onSelectRoute }: RouteInfoProps) {
         <div className="h-px bg-slate-200 flex-1" />
       </h3>
       <div className="flex flex-col gap-3.5">
-        {routes.map((option, idx) => {
+        {routes.map((option) => {
           const risk = option.route.averageRisk;
           const riskColor = getRiskColor(Math.round(risk));
           const riskLabel = getRiskLabel(Math.round(risk));
-          const totalRoutes = routes.length;
-
-          const dotColorClass =
-            totalRoutes <= 1
-              ? "bg-emerald-500 shadow-emerald-500/40"
-              : idx === 0
-              ? "bg-emerald-500 shadow-emerald-500/40"
-              : idx === totalRoutes - 1
-              ? "bg-rose-500 shadow-rose-500/40"
-              : "bg-amber-400 shadow-amber-400/40";
+          const dotColorClass = CATEGORY_DOT[option.category];
+          const Icon = CATEGORY_ICON[option.category];
 
           const badgeColorClass =
             risk <= 2
               ? "bg-emerald-50 text-emerald-700 border-emerald-200"
               : risk <= 4
-              ? "bg-lime-50 text-lime-700 border-lime-200"
-              : risk <= 6
-              ? "bg-amber-50 text-amber-700 border-amber-200"
-              : "bg-rose-50 text-rose-700 border-rose-200";
+                ? "bg-lime-50 text-lime-700 border-lime-200"
+                : risk <= 6
+                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                  : "bg-rose-50 text-rose-700 border-rose-200";
 
           return (
             <button
@@ -58,7 +64,7 @@ export function RouteInfo({ routes, onSelectRoute }: RouteInfoProps) {
               )}
 
               <div className="relative z-10">
-                <div className="flex justify-between items-start mb-4">
+                <div className="flex justify-between items-start mb-3">
                   <div className="flex items-center gap-3">
                     <div
                       className={`w-3.5 h-3.5 rounded-full shadow-md ${dotColorClass}`}
@@ -84,7 +90,17 @@ export function RouteInfo({ routes, onSelectRoute }: RouteInfoProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-5 text-[13px] font-semibold text-slate-500 mb-4">
+                {option.description && (
+                  <p
+                    className={`text-[12px] mb-2 truncate ${
+                      option.selected ? "text-indigo-700" : "text-slate-500"
+                    }`}
+                  >
+                    {option.description}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-5 text-[13px] font-semibold text-slate-500 mb-3">
                   <div className="flex items-center gap-1.5">
                     <Clock
                       className={`w-4 h-4 ${
@@ -113,27 +129,32 @@ export function RouteInfo({ routes, onSelectRoute }: RouteInfoProps) {
                       {option.route.totalDistance}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <AlertTriangle
-                      className={`w-4 h-4 ${
-                        option.selected
-                          ? "text-orange-500"
-                          : "text-slate-400"
-                      }`}
-                    />
-                    <span
-                      className={option.selected ? "text-indigo-900" : ""}
-                    >
-                      Risk: {risk.toFixed(1)}/10
-                    </span>
-                  </div>
                 </div>
 
-                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner border border-slate-200/50">
+                <div
+                  className={`flex items-start gap-2 text-[12px] leading-snug ${
+                    option.selected ? "text-indigo-800" : "text-slate-600"
+                  }`}
+                >
+                  <Icon
+                    className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${
+                      option.category === "safest"
+                        ? "text-emerald-500"
+                        : option.category === "fastest"
+                          ? "text-rose-500"
+                          : option.category === "balanced"
+                            ? "text-amber-500"
+                            : "text-indigo-500"
+                    }`}
+                  />
+                  <span>{option.explanation}</span>
+                </div>
+
+                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner border border-slate-200/50 mt-3">
                   <div
                     className="h-full rounded-full transition-all duration-1000 ease-out"
                     style={{
-                      width: `${(risk / 10) * 100}%`,
+                      width: `${Math.min(100, (risk / 10) * 100)}%`,
                       background: `linear-gradient(to right, ${riskColor}, ${riskColor})`,
                     }}
                   />

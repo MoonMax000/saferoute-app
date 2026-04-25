@@ -73,13 +73,19 @@ export function EventLog({ entries, onClear }: EventLogProps) {
                 </span>
                 {entry.type !== "info" && (
                   <span
-                    className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded font-bold"
+                    className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide"
                     style={{
                       color,
                       backgroundColor: `${color}20`,
                     }}
                   >
-                    {entry.riskLevel}/10
+                    {entry.riskLevel <= 3
+                      ? "calm"
+                      : entry.riskLevel <= 5
+                        ? "caution"
+                        : entry.riskLevel <= 7
+                          ? "elevated"
+                          : "high"}
                   </span>
                 )}
               </div>

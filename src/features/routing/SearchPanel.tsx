@@ -1,9 +1,11 @@
 "use client";
 
-import { useRef, useEffect, useCallback } from "react";
+import { useMemo } from "react";
 import { MapPin, ArrowUpDown, Navigation, Loader2 } from "lucide-react";
 import type { PinMode } from "@/features/map";
 import type { LatLng } from "@/shared/types";
+import { PlaceSearchInput, getDemoCity, type FetchedPlace } from "@/lib/google";
+import { clientEnv } from "@/lib/env";
 
 interface SearchPanelProps {
   onSearch: (origin: string, destination: string) => void;
@@ -30,79 +32,28 @@ export function SearchPanel({
   pinMode,
   onPinModeChange,
 }: SearchPanelProps) {
-  const originRef = useRef<HTMLInputElement>(null);
-  const destRef = useRef<HTMLInputElement>(null);
-  const originAutocompleteRef =
-    useRef<google.maps.places.Autocomplete | null>(null);
-  const destAutocompleteRef =
-    useRef<google.maps.places.Autocomplete | null>(null);
+  const city = useMemo(
+    () => getDemoCity(clientEnv.NEXT_PUBLIC_DEMO_CITY),
+    [],
+  );
 
-  const setupAutocomplete = useCallback(() => {
-    if (!window.google?.maps?.places) return;
+  const handleOriginPlace = (place: FetchedPlace) => {
+    if (place.location) onOriginCoordsChange?.(place.location);
+  };
 
-    if (originRef.current && !originAutocompleteRef.current) {
-      originAutocompleteRef.current = new google.maps.places.Autocomplete(
-        originRef.current,
-        { types: ["geocode", "establishment"] }
-      );
-      originAutocompleteRef.current.addListener("place_changed", () => {
-        const place = originAutocompleteRef.current?.getPlace();
-        if (place?.formatted_address) {
-          onOriginChange(place.formatted_address);
-        } else if (place?.name) {
-          onOriginChange(place.name);
-        }
-        if (place?.geometry?.location) {
-          onOriginCoordsChange?.({
-            lat: place.geometry.location.lat(),
-            lng: place.geometry.location.lng(),
-          });
-        }
-      });
-    }
-
-    if (destRef.current && !destAutocompleteRef.current) {
-      destAutocompleteRef.current = new google.maps.places.Autocomplete(
-        destRef.current,
-        { types: ["geocode", "establishment"] }
-      );
-      destAutocompleteRef.current.addListener("place_changed", () => {
-        const place = destAutocompleteRef.current?.getPlace();
-        if (place?.formatted_address) {
-          onDestinationChange(place.formatted_address);
-        } else if (place?.name) {
-          onDestinationChange(place.name);
-        }
-        if (place?.geometry?.location) {
-          onDestCoordsChange?.({
-            lat: place.geometry.location.lat(),
-            lng: place.geometry.location.lng(),
-          });
-        }
-      });
-    }
-  }, [onOriginChange, onDestinationChange, onOriginCoordsChange, onDestCoordsChange]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (window.google?.maps?.places) {
-        setupAutocomplete();
-        clearInterval(interval);
-      }
-    }, 200);
-    return () => clearInterval(interval);
-  }, [setupAutocomplete]);
+  const handleDestPlace = (place: FetchedPlace) => {
+    if (place.location) onDestCoordsChange?.(place.location);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (origin.trim() && destination.trim()) {
-      onSearch(origin, destination);
-    }
+    if (origin.trim() && destination.trim()) onSearch(origin, destination);
   };
 
   const handleSwap = () => {
+    const tmpOrigin = origin;
     onOriginChange(destination);
-    onDestinationChange(origin);
+    onDestinationChange(tmpOrigin);
   };
 
   return (
@@ -130,13 +81,14 @@ export function SearchPanel({
               <div className="w-3 h-3 bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] border-2 border-white z-10" />
             </div>
           </div>
-          <input
-            ref={originRef}
-            type="text"
-            placeholder="Starting point"
+          <PlaceSearchInput
             value={origin}
-            onChange={(e) => onOriginChange(e.target.value)}
-            className="bg-transparent flex-1 outline-none text-[15px] font-medium text-slate-700 placeholder:text-slate-400 w-full"
+            onValueChange={onOriginChange}
+            onPlaceSelect={handleOriginPlace}
+            placeholder="Starting point"
+            locationBias={city.center}
+            biasRadius={city.radiusMeters}
+            countryCode={city.countryCode}
           />
           <button
             type="button"
@@ -167,19 +119,20 @@ export function SearchPanel({
               <div className="w-3 h-3 bg-rose-500 rounded-full shadow-[0_0_10px_rgba(244,63,94,0.5)] border-2 border-white z-10" />
             </div>
           </div>
-          <input
-            ref={destRef}
-            type="text"
-            placeholder="Destination"
+          <PlaceSearchInput
             value={destination}
-            onChange={(e) => onDestinationChange(e.target.value)}
-            className="bg-transparent flex-1 outline-none text-[15px] font-medium text-slate-700 placeholder:text-slate-400 w-full"
+            onValueChange={onDestinationChange}
+            onPlaceSelect={handleDestPlace}
+            placeholder="Destination"
+            locationBias={city.center}
+            biasRadius={city.radiusMeters}
+            countryCode={city.countryCode}
           />
           <button
             type="button"
             onClick={() =>
               onPinModeChange(
-                pinMode === "destination" ? null : "destination"
+                pinMode === "destination" ? null : "destination",
               )
             }
             className={`p-2.5 rounded-lg transition-all duration-200 ${

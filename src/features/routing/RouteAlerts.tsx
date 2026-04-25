@@ -6,7 +6,7 @@ import type { RouteAlert } from "./route.types";
 
 interface RouteAlertsProps {
   alerts: RouteAlert[];
-  userZoneAlert: { label: string; riskLevel: number } | null;
+  userZoneAlert: { label: string; categoryLabel: string } | null;
 }
 
 export function RouteAlerts({ alerts, userZoneAlert }: RouteAlertsProps) {
@@ -38,11 +38,10 @@ export function RouteAlerts({ alerts, userZoneAlert }: RouteAlertsProps) {
           </div>
           <div>
             <p className="text-[13px] font-bold text-red-800">
-              You are in a risk zone
+              You are in a flagged area
             </p>
             <p className="text-[12px] text-red-600 mt-0.5">
-              {userZoneAlert.label} -- Risk level{" "}
-              {userZoneAlert.riskLevel}/10
+              {userZoneAlert.label} -- {userZoneAlert.categoryLabel}
             </p>
           </div>
         </div>
