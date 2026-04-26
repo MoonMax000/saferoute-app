@@ -625,16 +625,11 @@ export function MapView({
       (pos) => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         userLocationRef.current = loc;
-        // First successful geolocation while the map is still parked
-        // at the city default — pan to the user. After that, leave the
-        // camera alone (the user controls panning).
-        if (
-          mapRef.current &&
-          mapPositionRef.current.center === city.center
-        ) {
-          mapRef.current.panTo(loc);
-          mapPositionRef.current.center = loc;
-        }
+        // Don't auto-pan to the user's location: the demo is anchored
+        // to a specific city (LA) and people reviewing it from
+        // anywhere in the world shouldn't see the map jump to their
+        // own continent. The "Center on me" button does this
+        // explicitly when the user actually wants it.
         onUserLocationChange?.(loc);
 
         if (mapRef.current && google.maps.marker?.AdvancedMarkerElement) {
