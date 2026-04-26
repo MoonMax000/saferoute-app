@@ -518,7 +518,18 @@ export function MapView({
   const inspectorInfoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const paintPreviewCircleRef = useRef<google.maps.Circle | null>(null);
   const paintZonePolygonsRef = useRef<google.maps.Polygon[]>([]);
-  const [mapCenter, setMapCenter] = useState<LatLng>(city.center);
+  /**
+   * Live snapshot of the camera. Updated on every map `idle` event so we
+   * always know where the user is looking *without* triggering a React
+   * re-render. Critical because the GoogleMap below uses
+   * `key={nightMode ? "dark" : "light"}` to force a full remount on
+   * day/night toggle (Google's `colorScheme` is init-only) — and a
+   * remount would otherwise reset the camera to city defaults.
+   */
+  const mapPositionRef = useRef<{ center: LatLng; zoom: number }>({
+    center: city.center,
+    zoom: city.zoom,
+  });
   const [mapInstanceId, setMapInstanceId] = useState(0);
 
   const reverseGeocode = useCallback(
@@ -542,6 +553,36 @@ export function MapView({
     }
   }, []);
 
+  // Updated on every Google Maps `idle` event so we always remember the
+  // user's current camera. Cheap (no React state, no re-render).
+  const handleMapIdle = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const c = map.getCenter();
+    const z = map.getZoom();
+    if (c) {
+      mapPositionRef.current.center = { lat: c.lat(), lng: c.lng() };
+    }
+    if (typeof z === "number") {
+      mapPositionRef.current.zoom = z;
+    }
+  }, []);
+
+  /**
+   * Camera position to use for the *next* mount of `<GoogleMap>`.
+   * Recomputed only on nightMode flips so the remount the day/night
+   * toggle triggers can hand the new map the user's last position
+   * instead of falling back to `city.center` / `city.zoom`.
+   */
+  const initialCamera = useMemo(
+    () => ({
+      center: mapPositionRef.current.center,
+      zoom: mapPositionRef.current.zoom,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [nightMode],
+  );
+
   // User location tracking
   useEffect(() => {
     if (!navigator.geolocation) return;
@@ -550,10 +591,16 @@ export function MapView({
       (pos) => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         userLocationRef.current = loc;
-        setMapCenter((prev) => {
-          if (prev === city.center) return loc;
-          return prev;
-        });
+        // First successful geolocation while the map is still parked
+        // at the city default — pan to the user. After that, leave the
+        // camera alone (the user controls panning).
+        if (
+          mapRef.current &&
+          mapPositionRef.current.center === city.center
+        ) {
+          mapRef.current.panTo(loc);
+          mapPositionRef.current.center = loc;
+        }
         onUserLocationChange?.(loc);
 
         if (mapRef.current && google.maps.marker?.AdvancedMarkerElement) {
@@ -1262,10 +1309,11 @@ export function MapView({
         <GoogleMap
           key={nightMode ? "dark" : "light"}
           mapContainerStyle={MAP_CONTAINER}
-          center={mapCenter}
-          zoom={city.zoom}
+          center={initialCamera.center}
+          zoom={initialCamera.zoom}
           onLoad={onMapLoad}
           onClick={handleMapClick}
+          onIdle={handleMapIdle}
           options={{
             mapId: MAP_ID,
             disableDefaultUI: false,
