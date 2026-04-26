@@ -17,6 +17,7 @@ import { clientEnv } from "@/lib/env";
 import { getDemoCity, useMapsApi } from "@/lib/google";
 import { computeFormulaBreakdown } from "@/features/inspector/formula-breakdown";
 import { renderFormulaBreakdownHtml } from "@/features/inspector/InspectorClickPopup";
+import { inspectorLog } from "@/features/inspector/inspector-log";
 
 const MAP_CONTAINER = { width: "100%", height: "100%" };
 const MAP_ID = clientEnv.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "";
@@ -899,6 +900,9 @@ export function MapView({
         });
         startMarker.addEventListener("gmp-dragend", () => {
           const p = getPos(startMarker.position);
+          inspectorLog("event", "map: A marker dragend", {
+            coords: p ? { lat: Number(p.lat.toFixed(5)), lng: Number(p.lng.toFixed(5)) } : null,
+          });
           if (p) reverseGeocode(p.lat, p.lng, "origin");
         });
 
@@ -912,6 +916,9 @@ export function MapView({
         });
         endMarker.addEventListener("gmp-dragend", () => {
           const p = getPos(endMarker.position);
+          inspectorLog("event", "map: B marker dragend", {
+            coords: p ? { lat: Number(p.lat.toFixed(5)), lng: Number(p.lng.toFixed(5)) } : null,
+          });
           if (p) reverseGeocode(p.lat, p.lng, "destination");
         });
 

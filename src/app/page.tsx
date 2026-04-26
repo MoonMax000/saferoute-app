@@ -179,6 +179,14 @@ export default function Home() {
       const { isDragRebuild = false, originCoordsOverride, destCoordsOverride } =
         opts;
 
+      inspectorLog("event", "handleSearch: start", {
+        isDragRebuild,
+        originAddr,
+        destAddr,
+        hasOriginOverride: !!originCoordsOverride,
+        hasDestOverride: !!destCoordsOverride,
+      });
+
       setIsLoading(true);
       setError(null);
       if (!isDragRebuild) {
@@ -199,14 +207,16 @@ export default function Home() {
             coords: destCoordsOverride ?? destCoords,
           },
         });
+        inspectorLog("event", `handleSearch: API returned ${raw.length} routes`);
         if (raw.length === 0) {
           throw new Error("No routes found. Try different addresses.");
         }
         setRawRoutes(raw);
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to calculate route",
-        );
+        const msg =
+          err instanceof Error ? err.message : "Failed to calculate route";
+        inspectorLog("warn", `handleSearch: error — ${msg}`);
+        setError(msg);
       } finally {
         setIsLoading(false);
       }
@@ -455,6 +465,11 @@ export default function Home() {
 
   const handleMarkerDrag = useCallback(
     (latlng: LatLng, address: string, mode: "origin" | "destination") => {
+      inspectorLog("event", `marker drag: ${mode} dropped`, {
+        coords: { lat: Number(latlng.lat.toFixed(5)), lng: Number(latlng.lng.toFixed(5)) },
+        address: address.slice(0, 60),
+      });
+
       if (mode === "origin") {
         setOrigin(address);
         setOriginCoords(latlng);
@@ -468,23 +483,27 @@ export default function Home() {
       const newDest = mode === "destination" ? address : destination;
       const newOriginCoords = mode === "origin" ? latlng : originCoords;
       const newDestCoords = mode === "destination" ? latlng : destCoords;
-      if (newOrigin.trim() && newDest.trim()) {
-        // 50ms safety delay so the in-flight React batch (state
-        // updates from `setOrigin*` / `setDest*` and from
-        // `setIsLoading` inside `handleSearch`) lands cleanly before
-        // the next render, instead of trampling the just-fired
-        // `gmp-dragend` event chain. Imperceptible to the user, but
-        // makes the auto-rebuild reliable on every drop.
-        setTimeout(
-          () =>
-            handleSearch(newOrigin, newDest, {
-              isDragRebuild: true,
-              originCoordsOverride: newOriginCoords,
-              destCoordsOverride: newDestCoords,
-            }),
-          50,
-        );
+      if (!newOrigin.trim() || !newDest.trim()) {
+        inspectorLog("warn", "marker drag: skipping rebuild (one endpoint empty)", {
+          hasOrigin: !!newOrigin.trim(),
+          hasDest: !!newDest.trim(),
+        });
+        return;
       }
+      // 50ms safety delay so the in-flight React batch (state
+      // updates from `setOrigin*` / `setDest*` and from
+      // `setIsLoading` inside `handleSearch`) lands cleanly before
+      // the next render, instead of trampling the just-fired
+      // `gmp-dragend` event chain. Imperceptible to the user, but
+      // makes the auto-rebuild reliable on every drop.
+      setTimeout(() => {
+        inspectorLog("event", "marker drag: triggering handleSearch rebuild");
+        handleSearch(newOrigin, newDest, {
+          isDragRebuild: true,
+          originCoordsOverride: newOriginCoords,
+          destCoordsOverride: newDestCoords,
+        });
+      }, 50);
     },
     [origin, destination, originCoords, destCoords, handleSearch],
   );
