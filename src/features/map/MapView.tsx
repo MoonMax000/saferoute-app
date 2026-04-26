@@ -891,14 +891,19 @@ export function MapView({
           category: option.category,
         });
 
+        // Construct WITHOUT `map` — recent Google Maps versions (post
+        // 3.59) silently fail to attach if `gmpDraggable: true` is
+        // combined with `map` in the constructor. Setting `.map`
+        // afterwards is the documented attachment path that works
+        // reliably both in dev and on production.
         const startMarker = new AME({
           position: startPoint,
-          map,
           gmpDraggable: true,
           content: createRouteEndpointEl("#10b981", "A"),
           zIndex: 20,
           title: "Start (drag to reroute)",
         });
+        startMarker.map = map;
         startMarker.addEventListener("gmp-dragend", () => {
           const p = getPos(startMarker.position);
           inspectorLog("event", "map: A marker dragend", {
@@ -909,18 +914,32 @@ export function MapView({
 
         const endMarker = new AME({
           position: endPoint,
-          map,
           gmpDraggable: true,
           content: createRouteEndpointEl("#f43f5e", "B"),
           zIndex: 20,
           title: "Destination (drag to reroute)",
         });
+        endMarker.map = map;
         endMarker.addEventListener("gmp-dragend", () => {
           const p = getPos(endMarker.position);
           inspectorLog("event", "map: B marker dragend", {
             coords: p ? { lat: Number(p.lat.toFixed(5)), lng: Number(p.lng.toFixed(5)) } : null,
           });
           if (p) reverseGeocode(p.lat, p.lng, "destination");
+        });
+
+        // Verify on the next frame whether the markers actually made
+        // it into the DOM. If not, log a warning so we can spot
+        // regressions in the Engine Log without needing devtools.
+        requestAnimationFrame(() => {
+          const startConn = (startMarker as unknown as { isConnected?: boolean }).isConnected;
+          const endConn = (endMarker as unknown as { isConnected?: boolean }).isConnected;
+          if (!startConn || !endConn) {
+            inspectorLog("warn", "map: endpoint markers failed to attach to DOM", {
+              startConnected: !!startConn,
+              endConnected: !!endConn,
+            });
+          }
         });
 
         markersRef.current.push(startMarker, endMarker);
