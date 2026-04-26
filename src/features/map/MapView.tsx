@@ -891,11 +891,27 @@ export function MapView({
           category: option.category,
         });
 
-        // Construct WITHOUT `map` — recent Google Maps versions (post
-        // 3.59) silently fail to attach if `gmpDraggable: true` is
-        // combined with `map` in the constructor. Setting `.map`
-        // afterwards is the documented attachment path that works
-        // reliably both in dev and on production.
+        // Find the map's first overlay child div — needed as fallback
+        // attachment point for AME instances. On recent Google Maps
+        // versions, AdvancedMarkerElement constructed with
+        // `gmpDraggable: true` does NOT auto-attach to the overlay
+        // layer (Maps regression — verified manually on production).
+        // We force-append below if `.isConnected` stays false after
+        // the `.map = map` setter.
+        const overlayPane =
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ((map as any).getDiv?.() as HTMLElement | undefined)
+            ?.querySelector(".gm-style")
+            ?.querySelector(":scope > div > div") as HTMLElement | null;
+
+        const attachMarker = (marker: google.maps.marker.AdvancedMarkerElement) => {
+          marker.map = map;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if (!(marker as any).isConnected && overlayPane) {
+            overlayPane.appendChild(marker as unknown as Node);
+          }
+        };
+
         const startMarker = new AME({
           position: startPoint,
           gmpDraggable: true,
@@ -903,7 +919,7 @@ export function MapView({
           zIndex: 20,
           title: "Start (drag to reroute)",
         });
-        startMarker.map = map;
+        attachMarker(startMarker);
         startMarker.addEventListener("gmp-dragend", () => {
           const p = getPos(startMarker.position);
           inspectorLog("event", "map: A marker dragend", {
@@ -919,27 +935,13 @@ export function MapView({
           zIndex: 20,
           title: "Destination (drag to reroute)",
         });
-        endMarker.map = map;
+        attachMarker(endMarker);
         endMarker.addEventListener("gmp-dragend", () => {
           const p = getPos(endMarker.position);
           inspectorLog("event", "map: B marker dragend", {
             coords: p ? { lat: Number(p.lat.toFixed(5)), lng: Number(p.lng.toFixed(5)) } : null,
           });
           if (p) reverseGeocode(p.lat, p.lng, "destination");
-        });
-
-        // Verify on the next frame whether the markers actually made
-        // it into the DOM. If not, log a warning so we can spot
-        // regressions in the Engine Log without needing devtools.
-        requestAnimationFrame(() => {
-          const startConn = (startMarker as unknown as { isConnected?: boolean }).isConnected;
-          const endConn = (endMarker as unknown as { isConnected?: boolean }).isConnected;
-          if (!startConn || !endConn) {
-            inspectorLog("warn", "map: endpoint markers failed to attach to DOM", {
-              startConnected: !!startConn,
-              endConnected: !!endConn,
-            });
-          }
         });
 
         markersRef.current.push(startMarker, endMarker);
