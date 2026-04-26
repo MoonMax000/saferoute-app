@@ -451,6 +451,10 @@ interface MapViewProps {
   /** Already-committed paint zones (rendered as polygons). */
   paintZones?: RiskCell[];
   onPaintMapClick?: (latlng: LatLng) => void;
+  /** True while a fresh route search is in flight after a drag/repin.
+   *  Used to dim the previous route polylines so the user sees the
+   *  recalculation is happening. */
+  isRebuilding?: boolean;
 }
 
 export function MapView({
@@ -482,6 +486,7 @@ export function MapView({
   paintRisk = 7,
   paintZones = [],
   onPaintMapClick,
+  isRebuilding = false,
 }: MapViewProps) {
   const { isLoaded } = useMapsApi();
   const city = useMemo(
@@ -834,7 +839,10 @@ export function MapView({
       // below) so it stays vivid under the grayscale filter.
       if (focusMode && !isSelected) return;
 
-      const opacity = isSelected ? 1 : 0.3;
+      const baseOpacity = isSelected ? 1 : 0.3;
+      // Soften the existing route while a fresh search is mid-flight so
+      // the user sees the previous polyline isn't the live answer.
+      const opacity = isRebuilding ? baseOpacity * 0.45 : baseOpacity;
       const zIndex = isSelected ? 10 : 1;
       const skipCanvasPolyline = focusMode && isSelected;
 
@@ -913,7 +921,7 @@ export function MapView({
     if (hasBounds && !isRebuild) {
       map.fitBounds(bounds, { top: 60, bottom: 60, left: 60, right: 60 });
     }
-  }, [routes, focusMode, clearPolylines, reverseGeocode, mapInstanceId]);
+  }, [routes, focusMode, clearPolylines, reverseGeocode, mapInstanceId, isRebuilding]);
 
   // ── Focus-mode SVG overlay for the selected route ─────────────────
   // Lives on the OverlayView pane (DOM), so the canvas-only grayscale

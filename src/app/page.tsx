@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
-import { Info, Sparkles, Play, Square } from "lucide-react";
+import { Info, Loader2, Sparkles, Play, Square } from "lucide-react";
 import type { LatLng } from "@/shared/types";
 import { haversineDistance } from "@/shared/geo";
 import { MapControls } from "@/features/map";
@@ -404,15 +404,11 @@ export default function Home() {
       // the old route's start/end markers stay on screen on top of
       // the new coords, which reads as "click did nothing".
       if (nextOrigin.trim() && nextDest.trim()) {
-        setTimeout(
-          () =>
-            handleSearch(nextOrigin, nextDest, {
-              isDragRebuild: true,
-              originCoordsOverride: nextOriginCoords,
-              destCoordsOverride: nextDestCoords,
-            }),
-          200,
-        );
+        handleSearch(nextOrigin, nextDest, {
+          isDragRebuild: true,
+          originCoordsOverride: nextOriginCoords,
+          destCoordsOverride: nextDestCoords,
+        });
       }
     },
     [origin, destination, originCoords, destCoords, handleSearch],
@@ -466,15 +462,15 @@ export default function Home() {
       const newOriginCoords = mode === "origin" ? latlng : originCoords;
       const newDestCoords = mode === "destination" ? latlng : destCoords;
       if (newOrigin.trim() && newDest.trim()) {
-        setTimeout(
-          () =>
-            handleSearch(newOrigin, newDest, {
-              isDragRebuild: true,
-              originCoordsOverride: newOriginCoords,
-              destCoordsOverride: newDestCoords,
-            }),
-          300,
-        );
+        // Fire immediately — `handleSearch` reads from the explicit
+        // overrides, not from React state, so there's nothing to wait
+        // on. Skipping the old 300ms timer makes the rebuild feel
+        // instant when the user drops a marker.
+        handleSearch(newOrigin, newDest, {
+          isDragRebuild: true,
+          originCoordsOverride: newOriginCoords,
+          destCoordsOverride: newDestCoords,
+        });
       }
     },
     [origin, destination, originCoords, destCoords, handleSearch],
@@ -745,12 +741,24 @@ export default function Home() {
 
       <main className="flex-1 relative min-h-[400px] md:min-h-0">
         <InspectorToggle />
+        {/* Live "recalculating" badge — appears whenever a search is
+             running while a route is already drawn (drag-rebuild,
+             repin, day/night re-rank, slider tweak, etc). Gives the
+             user a clear signal that something is happening and the
+             current route is about to refresh. */}
+        {isLoading && routes.length > 0 && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/90 backdrop-blur-md text-white text-[12px] font-semibold shadow-lg shadow-slate-900/30 border border-slate-700/50 animate-fade-in">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+            Recalculating route…
+          </div>
+        )}
         <MapView
           routes={routes}
           showZones={showZones}
           showTraffic={showTraffic}
           pinMode={pinMode}
           nightMode={nightMode}
+          isRebuilding={isLoading && routes.length > 0}
           focusMode={focusMode}
           simulationPoint={sim.simPoint}
           simulationHeading={sim.simHeading}
