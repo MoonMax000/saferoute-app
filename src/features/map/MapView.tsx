@@ -519,6 +519,23 @@ export function MapView({
   const paintPreviewCircleRef = useRef<google.maps.Circle | null>(null);
   const paintZonePolygonsRef = useRef<google.maps.Polygon[]>([]);
   /**
+   * Snapshot of which click-action modes are currently active.
+   * Polygon click listeners (created once per cell) read this ref to
+   * decide whether to swallow the click for an InfoWindow or forward
+   * it through `handleMapClick` so the user can drop A/B pins,
+   * incidents, paint zones, etc. on top of risk zones.
+   */
+  const interactionModeRef = useRef({
+    pin: false,
+    incident: false,
+    paint: false,
+    inspector: false,
+  });
+  /** Live ref to `handleMapClick` so polygon listeners always call the
+   *  current handler instead of a stale closure. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleMapClickRef = useRef<(e: any) => void>(() => {});
+  /**
    * Live snapshot of the camera. Updated on every map `idle` event so we
    * always know where the user is looking *without* triggering a React
    * re-render. Critical because the GoogleMap below uses
@@ -582,6 +599,17 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [nightMode],
   );
+
+  // Keep the polygon-listener-facing refs in sync with the live props
+  // and the latest `handleMapClick` callback.
+  useEffect(() => {
+    interactionModeRef.current = {
+      pin: !!pinMode,
+      incident: !!incidentPlacementMode,
+      paint: !!paintModeActive,
+      inspector: !!inspectorEnabled,
+    };
+  }, [pinMode, incidentPlacementMode, paintModeActive, inspectorEnabled]);
 
   // User location tracking
   useEffect(() => {
@@ -710,6 +738,14 @@ export function MapView({
       advisoryIncidentWeight,
     ],
   );
+
+  // Keep the ref pointed at the freshest `handleMapClick`. Polygon
+  // click listeners read this ref so they don't need to be recreated
+  // every time the callback changes (which would thrash the polygon
+  // pool whenever a slider moves).
+  useEffect(() => {
+    handleMapClickRef.current = handleMapClick;
+  }, [handleMapClick]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -958,6 +994,17 @@ export function MapView({
       });
 
       polygon.addListener("click", (e: google.maps.PolyMouseEvent) => {
+        // When any click-action mode is active (drop A/B pin, place
+        // incident, paint zone, inspector breakdown), forward the
+        // click to the map handler so the polygon doesn't swallow it.
+        // Without this, clicking on a risk zone while in pin mode
+        // would just open the category InfoWindow and the user's pin
+        // would never land.
+        const m = interactionModeRef.current;
+        if (m.pin || m.incident || m.paint || m.inspector) {
+          handleMapClickRef.current(e);
+          return;
+        }
         infoWindowsRef.current.forEach((w) => w.close());
         infoWindow.setPosition(e.latLng);
         infoWindow.open(map);
