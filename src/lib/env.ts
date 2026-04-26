@@ -9,7 +9,7 @@ import { z } from "zod";
  * throw at module load to fail loudly.
  */
 
-const DEMO_CITY_VALUES = ["nha-trang", "nyc"] as const;
+const DEMO_CITY_VALUES = ["los-angeles", "nyc", "nha-trang"] as const;
 export type DemoCitySlug = (typeof DEMO_CITY_VALUES)[number];
 
 const clientSchema = z.object({
@@ -17,7 +17,7 @@ const clientSchema = z.object({
     .string()
     .min(1, "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is required"),
   NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: z.string().min(1).optional(),
-  NEXT_PUBLIC_DEMO_CITY: z.enum(DEMO_CITY_VALUES).default("nha-trang"),
+  NEXT_PUBLIC_DEMO_CITY: z.enum(DEMO_CITY_VALUES).default("los-angeles"),
 });
 
 const serverSchema = z.object({
@@ -46,7 +46,7 @@ export const clientEnv = clientParsed.success
         process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
       NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID:
         process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID,
-      NEXT_PUBLIC_DEMO_CITY: "nha-trang" as DemoCitySlug,
+      NEXT_PUBLIC_DEMO_CITY: "los-angeles" as DemoCitySlug,
     };
 
 export function getServerEnv() {

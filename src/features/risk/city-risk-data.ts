@@ -27,6 +27,207 @@ function generateCellPolygon(
   return points;
 }
 
+const LOS_ANGELES_SEEDS: RiskCellSeed[] = [
+  // ── Westside (calm) ───────────────────────────────────────────────────
+  {
+    id: "la-beverly-hills",
+    label: "Beverly Hills",
+    center: { lat: 34.0736, lng: -118.4004 },
+    radius: 1500,
+    baseDayRisk: 1,
+    nightMultiplier: 1.1,
+    tags: ["residential"],
+  },
+  {
+    id: "la-pacific-palisades",
+    label: "Pacific Palisades",
+    center: { lat: 34.0464, lng: -118.5263 },
+    radius: 1500,
+    baseDayRisk: 1,
+    nightMultiplier: 1.1,
+    tags: ["residential"],
+  },
+  {
+    id: "la-westwood-ucla",
+    label: "Westwood / UCLA",
+    center: { lat: 34.0689, lng: -118.4452 },
+    radius: 1100,
+    baseDayRisk: 2,
+    nightMultiplier: 1.2,
+    tags: ["residential"],
+  },
+  {
+    id: "la-santa-monica-pier",
+    label: "Santa Monica Pier",
+    center: { lat: 34.0083, lng: -118.4988 },
+    radius: 1000,
+    baseDayRisk: 3,
+    nightMultiplier: 1.4,
+    tags: ["tourist"],
+  },
+  {
+    id: "la-venice-beach",
+    label: "Venice Beach",
+    center: { lat: 33.985, lng: -118.4695 },
+    radius: 1300,
+    baseDayRisk: 3,
+    nightMultiplier: 1.5,
+    tags: ["tourist", "nightlife"],
+  },
+
+  // ── Hollywood / nightlife belt ────────────────────────────────────────
+  {
+    id: "la-west-hollywood",
+    label: "West Hollywood",
+    center: { lat: 34.09, lng: -118.3617 },
+    radius: 1300,
+    baseDayRisk: 3,
+    nightMultiplier: 1.5,
+    tags: ["nightlife", "commercial"],
+  },
+  {
+    id: "la-hollywood-walk-of-fame",
+    label: "Hollywood Walk of Fame",
+    center: { lat: 34.1015, lng: -118.3267 },
+    radius: 1100,
+    baseDayRisk: 4,
+    nightMultiplier: 1.6,
+    tags: ["tourist", "nightlife"],
+  },
+  {
+    id: "la-hollywood-hills",
+    label: "Hollywood Hills",
+    center: { lat: 34.1267, lng: -118.345 },
+    radius: 1700,
+    baseDayRisk: 1,
+    nightMultiplier: 1.1,
+    tags: ["residential"],
+  },
+  {
+    id: "la-echo-park",
+    label: "Echo Park / Silver Lake",
+    center: { lat: 34.078, lng: -118.2606 },
+    radius: 1500,
+    baseDayRisk: 3,
+    nightMultiplier: 1.4,
+    tags: ["residential", "nightlife"],
+  },
+
+  // ── Mid / Central LA ──────────────────────────────────────────────────
+  {
+    id: "la-mid-wilshire",
+    label: "Mid-Wilshire",
+    center: { lat: 34.0617, lng: -118.35 },
+    radius: 1500,
+    baseDayRisk: 2,
+    nightMultiplier: 1.2,
+    tags: ["commercial", "residential"],
+  },
+  {
+    id: "la-koreatown",
+    label: "Koreatown",
+    center: { lat: 34.0577, lng: -118.3008 },
+    radius: 1500,
+    baseDayRisk: 4,
+    nightMultiplier: 1.4,
+    tags: ["commercial", "residential", "nightlife"],
+  },
+  {
+    id: "la-downtown-financial",
+    label: "Downtown Financial District",
+    center: { lat: 34.05, lng: -118.258 },
+    radius: 1300,
+    baseDayRisk: 3,
+    nightMultiplier: 1.4,
+    tags: ["commercial", "corridor"],
+  },
+  {
+    id: "la-skid-row",
+    label: "Skid Row",
+    center: { lat: 34.044, lng: -118.2434 },
+    radius: 700,
+    baseDayRisk: 8,
+    nightMultiplier: 1.5,
+    tags: ["isolated", "industrial"],
+  },
+  {
+    id: "la-arts-district",
+    label: "Arts District",
+    center: { lat: 34.0407, lng: -118.2349 },
+    radius: 700,
+    baseDayRisk: 4,
+    nightMultiplier: 1.4,
+    tags: ["commercial", "industrial"],
+  },
+  {
+    id: "la-boyle-heights",
+    label: "Boyle Heights / East LA",
+    center: { lat: 34.0344, lng: -118.2104 },
+    radius: 1700,
+    baseDayRisk: 5,
+    nightMultiplier: 1.4,
+    tags: ["residential", "corridor"],
+  },
+
+  // ── South LA ──────────────────────────────────────────────────────────
+  {
+    id: "la-south-la",
+    label: "South LA",
+    center: { lat: 33.987, lng: -118.292 },
+    radius: 2000,
+    baseDayRisk: 6,
+    nightMultiplier: 1.5,
+    tags: ["residential", "corridor"],
+  },
+  {
+    id: "la-watts",
+    label: "Watts",
+    center: { lat: 33.9408, lng: -118.2419 },
+    radius: 1400,
+    baseDayRisk: 7,
+    nightMultiplier: 1.5,
+    tags: ["residential", "isolated"],
+  },
+  {
+    id: "la-compton",
+    label: "Compton",
+    center: { lat: 33.8958, lng: -118.22 },
+    radius: 2200,
+    baseDayRisk: 6,
+    nightMultiplier: 1.5,
+    tags: ["residential", "corridor"],
+  },
+  {
+    id: "la-inglewood",
+    label: "Inglewood",
+    center: { lat: 33.9617, lng: -118.3531 },
+    radius: 1900,
+    baseDayRisk: 5,
+    nightMultiplier: 1.4,
+    tags: ["residential", "commercial"],
+  },
+  {
+    id: "la-lax-corridor",
+    label: "LAX Airport Corridor",
+    center: { lat: 33.9416, lng: -118.4085 },
+    radius: 2000,
+    baseDayRisk: 4,
+    nightMultiplier: 1.3,
+    tags: ["corridor", "isolated"],
+  },
+
+  // ── Northeast / Pasadena ──────────────────────────────────────────────
+  {
+    id: "la-pasadena",
+    label: "Pasadena Old Town",
+    center: { lat: 34.1466, lng: -118.15 },
+    radius: 1300,
+    baseDayRisk: 1,
+    nightMultiplier: 1.2,
+    tags: ["residential", "tourist"],
+  },
+];
+
 const NHA_TRANG_SEEDS: RiskCellSeed[] = [
   {
     id: "nt-promenade",
@@ -250,6 +451,7 @@ const NYC_SEEDS: RiskCellSeed[] = [
 ];
 
 const CITY_SEEDS: Record<DemoCitySlug, RiskCellSeed[]> = {
+  "los-angeles": LOS_ANGELES_SEEDS,
   "nha-trang": NHA_TRANG_SEEDS,
   nyc: NYC_SEEDS,
 };
@@ -258,7 +460,7 @@ let cellCache: { city: DemoCitySlug; cells: RiskCell[] } | null = null;
 
 export function getCityRiskCells(city: DemoCitySlug): RiskCell[] {
   if (cellCache && cellCache.city === city) return cellCache.cells;
-  const seeds = CITY_SEEDS[city] ?? CITY_SEEDS["nha-trang"];
+  const seeds = CITY_SEEDS[city] ?? CITY_SEEDS["los-angeles"];
   const cells: RiskCell[] = seeds.map((seed, i) => ({
     ...seed,
     polygon: generateCellPolygon(seed.center, seed.radius, i + 3),

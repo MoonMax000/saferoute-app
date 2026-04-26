@@ -46,6 +46,8 @@ export interface RouteOption {
   distanceMeters: number;
   /** Internal: fraction of sampled points falling in elevated risk cells. */
   highRiskFraction: number;
+  /** Internal: number of distinct incidents physically intersecting the route. */
+  incidentImpacts: number;
 }
 
 export interface RouteAlert {

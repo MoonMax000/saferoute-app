@@ -27,6 +27,8 @@ export interface TripStatus {
   position: LatLng | null;
   /** Distance (m) from the most recent fix to the route. `null` until first fix. */
   distanceFromRouteM: number | null;
+  /** Most recent GPS speed in km/h. `null` if not available. */
+  speedKmh: number | null;
   /** Free-form error message for `permission-denied` / `unavailable`. */
   errorMessage?: string;
 }

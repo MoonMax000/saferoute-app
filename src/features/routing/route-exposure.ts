@@ -25,12 +25,18 @@ export interface ExposureOptions {
   elevatedThreshold?: number;
   /** Distance from the polyline (metres) at which an incident counts as a hit. */
   incidentImpactRadiusM?: number;
+  /** Multiplier applied to severity for `blocking` incidents (closures). */
+  blockingIncidentWeight?: number;
+  /** Multiplier applied to severity for `advisory` incidents (police, robbery). */
+  advisoryIncidentWeight?: number;
 }
 
 const DEFAULTS: Required<ExposureOptions> = {
   sampleStep: 8,
   elevatedThreshold: 5.5,
   incidentImpactRadiusM: 120,
+  blockingIncidentWeight: 5.0,
+  advisoryIncidentWeight: 2.5,
 };
 
 export function decodeRoutePolyline(encoded: string): LatLng[] {
@@ -46,16 +52,21 @@ export function decodeRoutePolyline(encoded: string): LatLng[] {
 function incidentInfluenceAt(
   point: { lat: number; lng: number },
   incidents: RiskIncident[],
+  blockingWeight: number,
+  advisoryWeight: number,
 ): number {
   let max = 0;
   for (const incident of incidents) {
     const dist = haversineDistance(point, incident.center);
     if (dist > incident.radius) continue;
     const proximity = 1 - dist / incident.radius;
+    // Weights default to 5.0 / 2.5 (blocking / advisory) so each placement
+    // noticeably moves avgRisk for the affected route. They are tunable
+    // through `risk-config-store` when Inspector mode is on.
     const weight =
       incident.kind === "blocking"
-        ? incident.severity * 2.0
-        : incident.severity * 1.0;
+        ? incident.severity * blockingWeight
+        : incident.severity * advisoryWeight;
     max = Math.max(max, weight * proximity);
   }
   return max;
@@ -73,7 +84,13 @@ export function scoreRoute(
   incidents: RiskIncident[] = [],
   opts: ExposureOptions = {},
 ): ScoredRoute {
-  const { sampleStep, elevatedThreshold, incidentImpactRadiusM } = {
+  const {
+    sampleStep,
+    elevatedThreshold,
+    incidentImpactRadiusM,
+    blockingIncidentWeight,
+    advisoryIncidentWeight,
+  } = {
     ...DEFAULTS,
     ...opts,
   };
@@ -86,7 +103,12 @@ export function scoreRoute(
 
   const evalSample = (i: number) => {
     const base = evaluatePointRisk(path[i], cells, time);
-    const bump = incidentInfluenceAt(path[i], incidents);
+    const bump = incidentInfluenceAt(
+      path[i],
+      incidents,
+      blockingIncidentWeight,
+      advisoryIncidentWeight,
+    );
     const r = Math.min(10, base + bump);
     totalRisk += r;
     maxRisk = Math.max(maxRisk, r);

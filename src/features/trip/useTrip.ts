@@ -26,6 +26,7 @@ const INITIAL: TripStatus = {
   state: "idle",
   position: null,
   distanceFromRouteM: null,
+  speedKmh: null,
 };
 
 /**
@@ -48,6 +49,7 @@ export function useTrip(opts: UseTripOptions) {
   const watchIdRef = useRef<number | null>(null);
   const offRouteSinceRef = useRef<number | null>(null);
   const polylineRef = useRef<LatLng[]>([]);
+  const lastFixRef = useRef<{ pos: LatLng; ts: number } | null>(null);
 
   // Keep the latest polyline available to the watcher callback without
   // re-subscribing every time the route reference changes.
@@ -61,29 +63,57 @@ export function useTrip(opts: UseTripOptions) {
       watchIdRef.current = null;
     }
     offRouteSinceRef.current = null;
+    lastFixRef.current = null;
     setStatus(INITIAL);
   }, []);
 
   const handleFix = useCallback(
-    (fix: LatLng) => {
+    (fix: LatLng, browserSpeedMs: number | null) => {
+      // Compute speed from delta if browser doesn't provide coords.speed.
+      const now = Date.now();
+      let speedKmh: number | null = null;
+      if (browserSpeedMs != null && Number.isFinite(browserSpeedMs)) {
+        speedKmh = Math.max(0, Math.round(browserSpeedMs * 3.6));
+      } else if (lastFixRef.current) {
+        const dtSec = (now - lastFixRef.current.ts) / 1000;
+        if (dtSec > 0) {
+          // Approximate metres on a flat WGS84 patch (good enough for HUD).
+          const dxLat = (fix.lat - lastFixRef.current.pos.lat) * 111320;
+          const dxLng =
+            (fix.lng - lastFixRef.current.pos.lng) *
+            111320 *
+            Math.cos((fix.lat * Math.PI) / 180);
+          const segMeters = Math.hypot(dxLat, dxLng);
+          const candidate = Math.round((segMeters / dtSec) * 3.6);
+          if (
+            Number.isFinite(candidate) &&
+            candidate >= 0 &&
+            candidate <= 250
+          ) {
+            speedKmh = candidate;
+          }
+        }
+      }
+      lastFixRef.current = { pos: fix, ts: now };
+
       const polyline = polylineRef.current;
       if (polyline.length < 2) {
         setStatus({
           state: "awaiting-fix",
           position: fix,
           distanceFromRouteM: null,
+          speedKmh,
         });
         return;
       }
 
       // Arrival check first — once we're at the destination we stop.
-      if (
-        distanceToFinalVertex(fix, polyline) <= arrivalRadiusM
-      ) {
+      if (distanceToFinalVertex(fix, polyline) <= arrivalRadiusM) {
         setStatus({
           state: "arrived",
           position: fix,
           distanceFromRouteM: 0,
+          speedKmh,
         });
         if (watchIdRef.current !== null) {
           navigator.geolocation?.clearWatch(watchIdRef.current);
@@ -101,12 +131,12 @@ export function useTrip(opts: UseTripOptions) {
           state: "on-route",
           position: fix,
           distanceFromRouteM: dist,
+          speedKmh,
         });
         return;
       }
 
       // Off-route: open or extend the sustained-deviation timer.
-      const now = Date.now();
       if (offRouteSinceRef.current === null) {
         offRouteSinceRef.current = now;
       }
@@ -117,6 +147,7 @@ export function useTrip(opts: UseTripOptions) {
         state: nextState,
         position: fix,
         distanceFromRouteM: dist,
+        speedKmh,
       });
     },
     [arrivalRadiusM, sustainedMs, thresholdMeters],
@@ -128,6 +159,7 @@ export function useTrip(opts: UseTripOptions) {
         state: "unavailable",
         position: null,
         distanceFromRouteM: null,
+        speedKmh: null,
         errorMessage: "Geolocation is not available in this browser.",
       });
       return;
@@ -137,6 +169,7 @@ export function useTrip(opts: UseTripOptions) {
         state: "unavailable",
         position: null,
         distanceFromRouteM: null,
+        speedKmh: null,
         errorMessage: "Select a route before starting a trip.",
       });
       return;
@@ -145,15 +178,20 @@ export function useTrip(opts: UseTripOptions) {
     if (watchIdRef.current !== null) return; // already running
     polylineRef.current = selectedRoute.route.polylinePath;
     offRouteSinceRef.current = null;
+    lastFixRef.current = null;
     setStatus({
       state: "awaiting-fix",
       position: null,
       distanceFromRouteM: null,
+      speedKmh: null,
     });
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) =>
-        handleFix({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        handleFix(
+          { lat: pos.coords.latitude, lng: pos.coords.longitude },
+          pos.coords.speed ?? null,
+        ),
       (err) => {
         const denied =
           err.code === GeolocationPositionError.PERMISSION_DENIED;
@@ -161,6 +199,7 @@ export function useTrip(opts: UseTripOptions) {
           state: denied ? "permission-denied" : "unavailable",
           position: null,
           distanceFromRouteM: null,
+          speedKmh: null,
           errorMessage: denied
             ? "Location permission was denied. Re-enable it in your browser settings to use trip tracking."
             : err.message ||

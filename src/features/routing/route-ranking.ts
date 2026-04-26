@@ -161,6 +161,7 @@ function makeOption(
     durationSeconds: scored.duration,
     distanceMeters: scored.distance,
     highRiskFraction: scored.highRiskFraction,
+    incidentImpacts: scored.incidentImpacts,
   };
 }
 

@@ -23,6 +23,24 @@ export interface DemoCityConfig {
 }
 
 export const DEMO_CITIES: Record<DemoCitySlug, DemoCityConfig> = {
+  "los-angeles": {
+    slug: "los-angeles",
+    label: "Los Angeles",
+    // Centred near Mid-Wilshire so the demo viewport covers the
+    // Hollywood ↔ Santa Monica corridor without wasting room on the ocean.
+    center: { lat: 34.058, lng: -118.32 },
+    radiusMeters: 22000,
+    zoom: 11,
+    countryCode: "US",
+    seed: {
+      // Hollywood Walk of Fame → Santa Monica Pier crosses the iconic risk
+      // gradient: tourist nightlife → upscale residential → coastal tourist.
+      originLabel: "Hollywood Walk of Fame, Hollywood Blvd",
+      originCoords: { lat: 34.1015, lng: -118.3387 },
+      destinationLabel: "Santa Monica Pier, Ocean Ave",
+      destinationCoords: { lat: 34.0094, lng: -118.4972 },
+    },
+  },
   "nha-trang": {
     slug: "nha-trang",
     label: "Nha Trang",
@@ -57,5 +75,5 @@ export const DEMO_CITIES: Record<DemoCitySlug, DemoCityConfig> = {
 };
 
 export function getDemoCity(slug: DemoCitySlug): DemoCityConfig {
-  return DEMO_CITIES[slug] ?? DEMO_CITIES["nha-trang"];
+  return DEMO_CITIES[slug] ?? DEMO_CITIES["los-angeles"];
 }

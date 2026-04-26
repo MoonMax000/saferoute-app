@@ -84,7 +84,11 @@ const TONE: Record<
 function summarise(status: TripStatus): { title: string; detail?: string } {
   switch (status.state) {
     case "idle":
-      return { title: "Trip not started." };
+      return {
+        title: "Live GPS trip not started.",
+        detail:
+          "Use this on a phone while you actually drive — your real GPS feeds the deviation alerts.",
+      };
     case "awaiting-fix":
       return { title: "Waiting for GPS fix..." };
     case "on-route":
@@ -165,7 +169,7 @@ export function TripPanel({
           <h4
             className={`text-[11px] font-bold uppercase tracking-widest ${tone.title}`}
           >
-            Trip status
+            Live GPS trip
           </h4>
           <p
             className={`text-[14px] font-semibold leading-snug ${tone.title}`}
@@ -185,12 +189,13 @@ export function TripPanel({
           type="button"
           onClick={onStart}
           className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-bold transition-all duration-200 active:scale-[0.98] bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+          title="Asks the browser for your real GPS — only useful when you're actually moving along the route"
         >
           <Navigation className="w-4 h-4" />
           {status.state === "idle"
-            ? "Start trip"
+            ? "Start live GPS trip"
             : status.state === "arrived"
-              ? "Start another trip"
+              ? "Start another live trip"
               : "Try again"}
         </button>
       )}
@@ -202,7 +207,7 @@ export function TripPanel({
           className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-bold transition-all duration-200 active:scale-[0.98] bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
         >
           <Square className="w-3.5 h-3.5 fill-slate-700" />
-          Stop tracking
+          Stop GPS tracking
         </button>
       )}
 

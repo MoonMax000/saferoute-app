@@ -10,10 +10,13 @@ import {
   effectiveRiskFill,
   effectiveRiskStroke,
 } from "@/features/risk";
+import type { RiskCell, RiskIncident } from "@/features/risk";
 import type { Incident, IncidentPlacementMode } from "@/features/incidents";
 import { INCIDENT_TYPES } from "@/features/incidents";
 import { clientEnv } from "@/lib/env";
 import { getDemoCity, useMapsApi } from "@/lib/google";
+import { computeFormulaBreakdown } from "@/features/inspector/formula-breakdown";
+import { renderFormulaBreakdownHtml } from "@/features/inspector/InspectorClickPopup";
 
 const MAP_CONTAINER = { width: "100%", height: "100%" };
 const MAP_ID = clientEnv.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "";
@@ -205,6 +208,204 @@ function createIncidentEl(opts: {
   return wrapper;
 }
 
+/* ── Helper: build a colour-preserving SVG route overlay ──
+ * Used in focus mode so the route stays vivid while the basemap canvas
+ * gets desaturated by CSS `filter: grayscale(1)`. The SVG element lives
+ * on the OverlayView pane (DOM, not canvas), so the filter doesn't reach
+ * it.
+ */
+function makeFocusRouteOverlay(opts: {
+  path: LatLng[];
+  /** Inner stroke (the visible "river"). */
+  color: string;
+  weight: number;
+  /** Outer halo for contrast on grayscale tiles. */
+  outline: string;
+  outlineWeight: number;
+}): google.maps.OverlayView {
+  const overlay = new google.maps.OverlayView();
+  let svgEl: SVGSVGElement | null = null;
+  let outlinePathEl: SVGPathElement | null = null;
+  let strokePathEl: SVGPathElement | null = null;
+
+  const updateGeometry = () => {
+    const projection = overlay.getProjection();
+    if (!projection || !svgEl || !outlinePathEl || !strokePathEl) return;
+    if (opts.path.length === 0) return;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const projected = opts.path.map((p) =>
+      projection.fromLatLngToDivPixel(new google.maps.LatLng(p.lat, p.lng)),
+    );
+    for (const point of projected) {
+      if (!point) continue;
+      if (point.x < minX) minX = point.x;
+      if (point.x > maxX) maxX = point.x;
+      if (point.y < minY) minY = point.y;
+      if (point.y > maxY) maxY = point.y;
+    }
+    const padding = Math.max(opts.weight, opts.outlineWeight) + 8;
+    const width = maxX - minX + padding * 2;
+    const height = maxY - minY + padding * 2;
+    const offX = minX - padding;
+    const offY = minY - padding;
+    svgEl.style.left = `${offX}px`;
+    svgEl.style.top = `${offY}px`;
+    svgEl.style.width = `${width}px`;
+    svgEl.style.height = `${height}px`;
+    svgEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+    const d = projected
+      .map((p, i) => {
+        const x = (p?.x ?? 0) - offX;
+        const y = (p?.y ?? 0) - offY;
+        return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+    outlinePathEl.setAttribute("d", d);
+    strokePathEl.setAttribute("d", d);
+  };
+
+  overlay.onAdd = function () {
+    const NS = "http://www.w3.org/2000/svg";
+    svgEl = document.createElementNS(NS, "svg") as SVGSVGElement;
+    svgEl.style.position = "absolute";
+    svgEl.style.left = "0";
+    svgEl.style.top = "0";
+    svgEl.style.pointerEvents = "none";
+    svgEl.style.overflow = "visible";
+
+    outlinePathEl = document.createElementNS(NS, "path") as SVGPathElement;
+    outlinePathEl.setAttribute("fill", "none");
+    outlinePathEl.setAttribute("stroke", opts.outline);
+    outlinePathEl.setAttribute("stroke-width", String(opts.outlineWeight));
+    outlinePathEl.setAttribute("stroke-linecap", "round");
+    outlinePathEl.setAttribute("stroke-linejoin", "round");
+    svgEl.appendChild(outlinePathEl);
+
+    strokePathEl = document.createElementNS(NS, "path") as SVGPathElement;
+    strokePathEl.setAttribute("fill", "none");
+    strokePathEl.setAttribute("stroke", opts.color);
+    strokePathEl.setAttribute("stroke-width", String(opts.weight));
+    strokePathEl.setAttribute("stroke-linecap", "round");
+    strokePathEl.setAttribute("stroke-linejoin", "round");
+    svgEl.appendChild(strokePathEl);
+
+    const panes = overlay.getPanes();
+    panes?.overlayLayer.appendChild(svgEl);
+  };
+
+  overlay.draw = updateGeometry;
+
+  overlay.onRemove = function () {
+    if (svgEl?.parentNode) svgEl.parentNode.removeChild(svgEl);
+    svgEl = null;
+    outlinePathEl = null;
+    strokePathEl = null;
+  };
+
+  return overlay;
+}
+
+/* ── Helper: build a colour-preserving SVG overlay for the risk cells.
+ * Same trick as the focus route overlay — DOM-rendered SVG sits in the
+ * OverlayView pane and survives the canvas-only grayscale filter.
+ */
+function makeFocusZonesOverlay(
+  cells: Array<{
+    polygon: LatLng[];
+    fill: string;
+    stroke: string;
+  }>,
+): google.maps.OverlayView {
+  const overlay = new google.maps.OverlayView();
+  let svgEl: SVGSVGElement | null = null;
+  const pathEls: SVGPathElement[] = [];
+
+  overlay.onAdd = function () {
+    const NS = "http://www.w3.org/2000/svg";
+    svgEl = document.createElementNS(NS, "svg") as SVGSVGElement;
+    svgEl.style.position = "absolute";
+    svgEl.style.left = "0";
+    svgEl.style.top = "0";
+    svgEl.style.pointerEvents = "none";
+    svgEl.style.overflow = "visible";
+
+    cells.forEach((cell) => {
+      const p = document.createElementNS(NS, "path") as SVGPathElement;
+      p.setAttribute("fill", cell.fill);
+      p.setAttribute("stroke", cell.stroke);
+      p.setAttribute("stroke-width", "1.5");
+      p.setAttribute("stroke-linejoin", "round");
+      svgEl!.appendChild(p);
+      pathEls.push(p);
+    });
+
+    const panes = overlay.getPanes();
+    panes?.overlayLayer.appendChild(svgEl);
+  };
+
+  overlay.draw = function () {
+    const projection = overlay.getProjection();
+    if (!projection || !svgEl || cells.length === 0) return;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const projectedCells = cells.map((cell) =>
+      cell.polygon.map((p) =>
+        projection.fromLatLngToDivPixel(
+          new google.maps.LatLng(p.lat, p.lng),
+        ),
+      ),
+    );
+    for (const projected of projectedCells) {
+      for (const point of projected) {
+        if (!point) continue;
+        if (point.x < minX) minX = point.x;
+        if (point.x > maxX) maxX = point.x;
+        if (point.y < minY) minY = point.y;
+        if (point.y > maxY) maxY = point.y;
+      }
+    }
+    const padding = 24;
+    const width = maxX - minX + padding * 2;
+    const height = maxY - minY + padding * 2;
+    const offX = minX - padding;
+    const offY = minY - padding;
+    svgEl.style.left = `${offX}px`;
+    svgEl.style.top = `${offY}px`;
+    svgEl.style.width = `${width}px`;
+    svgEl.style.height = `${height}px`;
+    svgEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+    projectedCells.forEach((projected, i) => {
+      if (!pathEls[i]) return;
+      const d =
+        projected
+          .map((p, j) => {
+            const x = (p?.x ?? 0) - offX;
+            const y = (p?.y ?? 0) - offY;
+            return `${j === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+          })
+          .join(" ") + " Z";
+      pathEls[i].setAttribute("d", d);
+    });
+  };
+
+  overlay.onRemove = function () {
+    if (svgEl?.parentNode) svgEl.parentNode.removeChild(svgEl);
+    svgEl = null;
+    pathEls.length = 0;
+  };
+
+  return overlay;
+}
+
 /* ── Helper: extract lat/lng from AdvancedMarkerElement position ── */
 function getPos(p: google.maps.LatLng | google.maps.LatLngLiteral | null | undefined): { lat: number; lng: number } | null {
   if (!p) return null;
@@ -219,6 +420,7 @@ interface MapViewProps {
   showTraffic: boolean;
   pinMode: PinMode;
   nightMode: boolean;
+  focusMode: boolean;
   simulationPoint: LatLng | null;
   simulationHeading: number;
   originCoords?: LatLng | null;
@@ -230,6 +432,25 @@ interface MapViewProps {
   onMarkerDrag?: (latlng: LatLng, address: string, mode: "origin" | "destination") => void;
   onIncidentPlace?: (latlng: LatLng) => void;
   onIncidentRemove?: (id: string) => void;
+  /* ── Inspector mode wiring ── */
+  /** When provided, replaces the built-in city cells everywhere on the
+   * map. Lets slider overrides + paint zones flow through to polygon
+   * colors and the click-anywhere breakdown without re-fetching cells. */
+  effectiveCells?: RiskCell[];
+  /** Open the formula-breakdown InfoWindow on plain map clicks. */
+  inspectorEnabled?: boolean;
+  /** RiskIncident form of `incidents`, used inside the breakdown. */
+  riskIncidents?: RiskIncident[];
+  blockingIncidentWeight?: number;
+  advisoryIncidentWeight?: number;
+  /* ── Paint mode ── */
+  paintModeActive?: boolean;
+  paintCenter?: LatLng | null;
+  paintRadius?: number;
+  paintRisk?: number;
+  /** Already-committed paint zones (rendered as polygons). */
+  paintZones?: RiskCell[];
+  onPaintMapClick?: (latlng: LatLng) => void;
 }
 
 export function MapView({
@@ -238,6 +459,7 @@ export function MapView({
   showTraffic,
   pinMode,
   nightMode,
+  focusMode,
   simulationPoint,
   simulationHeading,
   originCoords,
@@ -249,6 +471,17 @@ export function MapView({
   onMarkerDrag,
   onIncidentPlace,
   onIncidentRemove,
+  effectiveCells,
+  inspectorEnabled = false,
+  riskIncidents = [],
+  blockingIncidentWeight = 5.0,
+  advisoryIncidentWeight = 2.5,
+  paintModeActive = false,
+  paintCenter = null,
+  paintRadius = 250,
+  paintRisk = 7,
+  paintZones = [],
+  onPaintMapClick,
 }: MapViewProps) {
   const { isLoaded } = useMapsApi();
   const city = useMemo(
@@ -279,6 +512,12 @@ export function MapView({
   const incidentInfoRef = useRef<Map<string, google.maps.InfoWindow>>(
     new Map(),
   );
+  const focusOverlayRef = useRef<google.maps.OverlayView | null>(null);
+  const focusZonesOverlayRef = useRef<google.maps.OverlayView | null>(null);
+  /* Inspector mode refs */
+  const inspectorInfoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const paintPreviewCircleRef = useRef<google.maps.Circle | null>(null);
+  const paintZonePolygonsRef = useRef<google.maps.Polygon[]>([]);
   const [mapCenter, setMapCenter] = useState<LatLng>(city.center);
   const [mapInstanceId, setMapInstanceId] = useState(0);
 
@@ -358,35 +597,84 @@ export function MapView({
       if (!e.latLng) return;
       const lat = e.latLng.lat();
       const lng = e.latLng.lng();
+      const latlng = { lat, lng };
 
-      // Incident placement takes priority — once active the user is
-      // committed to either placing or cancelling.
-      if (incidentPlacementMode && onIncidentPlace) {
-        onIncidentPlace({ lat, lng });
+      // Paint mode wins — user is in the middle of placing a custom
+      // risk zone. Single click sets the centre.
+      if (paintModeActive && onPaintMapClick) {
+        onPaintMapClick(latlng);
         return;
       }
 
-      if (!pinMode || !onMapPinDrop) return;
+      // Incident placement takes priority next.
+      if (incidentPlacementMode && onIncidentPlace) {
+        onIncidentPlace(latlng);
+        return;
+      }
 
-      const geocoder = new google.maps.Geocoder();
-      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-        const address =
-          status === "OK" && results?.[0]
-            ? results[0].formatted_address
-            : `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-        onMapPinDrop({ lat, lng }, address, pinMode);
-      });
+      // Pin drop for origin/destination.
+      if (pinMode && onMapPinDrop) {
+        const geocoder = new google.maps.Geocoder();
+        geocoder.geocode({ location: latlng }, (results, status) => {
+          const address =
+            status === "OK" && results?.[0]
+              ? results[0].formatted_address
+              : `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+          onMapPinDrop(latlng, address, pinMode);
+        });
+        return;
+      }
+
+      // Inspector formula-breakdown popup (only on plain map clicks
+      // when no other mode is active).
+      if (inspectorEnabled && mapRef.current) {
+        const cells = effectiveCells ?? getCityRiskCells(clientEnv.NEXT_PUBLIC_DEMO_CITY);
+        const time: "day" | "night" = nightMode ? "night" : "day";
+        const breakdown = computeFormulaBreakdown(
+          latlng,
+          cells,
+          time,
+          riskIncidents,
+          blockingIncidentWeight,
+          advisoryIncidentWeight,
+        );
+        const html = renderFormulaBreakdownHtml(breakdown);
+
+        if (!inspectorInfoWindowRef.current) {
+          inspectorInfoWindowRef.current = new google.maps.InfoWindow({});
+        }
+        inspectorInfoWindowRef.current.setContent(html);
+        inspectorInfoWindowRef.current.setPosition(latlng);
+        inspectorInfoWindowRef.current.open(mapRef.current);
+      }
     },
-    [pinMode, onMapPinDrop, incidentPlacementMode, onIncidentPlace],
+    [
+      pinMode,
+      onMapPinDrop,
+      incidentPlacementMode,
+      onIncidentPlace,
+      paintModeActive,
+      onPaintMapClick,
+      inspectorEnabled,
+      effectiveCells,
+      nightMode,
+      riskIncidents,
+      blockingIncidentWeight,
+      advisoryIncidentWeight,
+    ],
   );
 
   useEffect(() => {
     if (!mapRef.current) return;
     mapRef.current.setOptions({
       draggableCursor:
-        pinMode || incidentPlacementMode ? "crosshair" : undefined,
+        pinMode || incidentPlacementMode || paintModeActive
+          ? "crosshair"
+          : inspectorEnabled
+            ? "help"
+            : undefined,
     });
-  }, [pinMode, incidentPlacementMode]);
+  }, [pinMode, incidentPlacementMode, paintModeActive, inspectorEnabled]);
 
   // Preview markers for origin/destination before route search
   useEffect(() => {
@@ -458,13 +746,19 @@ export function MapView({
 
     routes.forEach((option) => {
       const isSelected = option.selected;
+      // In focus mode hide alternatives entirely; the selected route
+      // gets drawn via a colour-preserving SVG overlay (see effect
+      // below) so it stays vivid under the grayscale filter.
+      if (focusMode && !isSelected) return;
+
       const opacity = isSelected ? 1 : 0.3;
       const zIndex = isSelected ? 10 : 1;
+      const skipCanvasPolyline = focusMode && isSelected;
 
       option.route.segments.forEach((segment) => {
         const path = segment.path.map((p) => ({ lat: p.lat, lng: p.lng }));
 
-        if (isSelected) {
+        if (isSelected && !skipCanvasPolyline) {
           const shadow = new google.maps.Polyline({
             path,
             strokeColor: "#000000",
@@ -476,15 +770,17 @@ export function MapView({
           polylinesRef.current.push(shadow);
         }
 
-        const polyline = new google.maps.Polyline({
-          path,
-          strokeColor: segment.color,
-          strokeOpacity: opacity,
-          strokeWeight: isSelected ? 7 : 3,
-          zIndex,
-          map,
-        });
-        polylinesRef.current.push(polyline);
+        if (!skipCanvasPolyline) {
+          const polyline = new google.maps.Polyline({
+            path,
+            strokeColor: segment.color,
+            strokeOpacity: opacity,
+            strokeWeight: isSelected ? 7 : 3,
+            zIndex,
+            map,
+          });
+          polylinesRef.current.push(polyline);
+        }
 
         if (isSelected) {
           path.forEach((p) => bounds.extend(p));
@@ -534,17 +830,57 @@ export function MapView({
     if (hasBounds && !isRebuild) {
       map.fitBounds(bounds, { top: 60, bottom: 60, left: 60, right: 60 });
     }
-  }, [routes, clearPolylines, reverseGeocode, mapInstanceId]);
+  }, [routes, focusMode, clearPolylines, reverseGeocode, mapInstanceId]);
 
-  // Draw risk overlay (cells from features/risk, day/night-aware)
+  // ── Focus-mode SVG overlay for the selected route ─────────────────
+  // Lives on the OverlayView pane (DOM), so the canvas-only grayscale
+  // filter doesn't desaturate it — the route stays in colour while the
+  // basemap goes monochrome.
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    if (focusOverlayRef.current) {
+      focusOverlayRef.current.setMap(null);
+      focusOverlayRef.current = null;
+    }
+
+    if (!focusMode) return;
+
+    const selected = routes.find((r) => r.selected);
+    if (!selected || selected.route.polylinePath.length < 2) return;
+
+    const overlay = makeFocusRouteOverlay({
+      path: selected.route.polylinePath,
+      // Vivid emerald against the desaturated tiles.
+      color: "#22c55e",
+      weight: 7,
+      outline: "#0f172a",
+      outlineWeight: 12,
+    });
+    overlay.setMap(mapRef.current);
+    focusOverlayRef.current = overlay;
+
+    return () => {
+      if (focusOverlayRef.current) {
+        focusOverlayRef.current.setMap(null);
+        focusOverlayRef.current = null;
+      }
+    };
+  }, [focusMode, routes, mapInstanceId]);
+
+  // Draw risk overlay (cells from features/risk, day/night-aware).
+  // In focus mode the canvas-based polygons are skipped — they would
+  // get desaturated by the grayscale CSS filter; the colour-preserving
+  // SVG overlay below renders them instead.
   useEffect(() => {
     if (!mapRef.current) return;
     clearPolygons();
 
-    if (!showZones) return;
+    if (!showZones || focusMode) return;
 
     const map = mapRef.current;
-    const cells = getCityRiskCells(clientEnv.NEXT_PUBLIC_DEMO_CITY);
+    const cells =
+      effectiveCells ?? getCityRiskCells(clientEnv.NEXT_PUBLIC_DEMO_CITY);
     const time: "day" | "night" = nightMode ? "night" : "day";
 
     cells.forEach((cell) => {
@@ -583,7 +919,121 @@ export function MapView({
       polygonsRef.current.push(polygon);
       infoWindowsRef.current.push(infoWindow);
     });
-  }, [showZones, clearPolygons, mapInstanceId, nightMode]);
+  }, [
+    showZones,
+    focusMode,
+    clearPolygons,
+    mapInstanceId,
+    nightMode,
+    effectiveCells,
+  ]);
+
+  // ── Focus-mode SVG overlay for the risk cells ─────────────────────
+  // Mirrors the canvas polygons but rendered as DOM SVG, so the
+  // grayscale filter on the basemap canvas leaves them in colour.
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    if (focusZonesOverlayRef.current) {
+      focusZonesOverlayRef.current.setMap(null);
+      focusZonesOverlayRef.current = null;
+    }
+
+    if (!focusMode || !showZones) return;
+
+    const cells =
+      effectiveCells ?? getCityRiskCells(clientEnv.NEXT_PUBLIC_DEMO_CITY);
+    const time: "day" | "night" = nightMode ? "night" : "day";
+    const overlay = makeFocusZonesOverlay(
+      cells.map((cell) => {
+        const effective =
+          cell.baseDayRisk *
+          (time === "night" ? cell.nightMultiplier : 1);
+        return {
+          polygon: cell.polygon,
+          fill: effectiveRiskFill(effective),
+          stroke: effectiveRiskStroke(effective),
+        };
+      }),
+    );
+    overlay.setMap(mapRef.current);
+    focusZonesOverlayRef.current = overlay;
+
+    return () => {
+      if (focusZonesOverlayRef.current) {
+        focusZonesOverlayRef.current.setMap(null);
+        focusZonesOverlayRef.current = null;
+      }
+    };
+  }, [focusMode, showZones, nightMode, mapInstanceId, effectiveCells]);
+
+  /* ── Paint mode: preview circle while user is placing a zone ── */
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    if (!paintModeActive || !paintCenter) {
+      if (paintPreviewCircleRef.current) {
+        paintPreviewCircleRef.current.setMap(null);
+        paintPreviewCircleRef.current = null;
+      }
+      return;
+    }
+
+    const map = mapRef.current;
+    const fill = effectiveRiskFill(paintRisk);
+    const stroke = effectiveRiskStroke(paintRisk);
+    if (!paintPreviewCircleRef.current) {
+      paintPreviewCircleRef.current = new google.maps.Circle({
+        map,
+        center: paintCenter,
+        radius: paintRadius,
+        fillColor: fill,
+        fillOpacity: 0.35,
+        strokeColor: stroke,
+        strokeWeight: 2.5,
+        strokeOpacity: 0.85,
+        clickable: false,
+        zIndex: 11,
+      });
+    } else {
+      paintPreviewCircleRef.current.setCenter(paintCenter);
+      paintPreviewCircleRef.current.setRadius(paintRadius);
+      paintPreviewCircleRef.current.setOptions({
+        fillColor: fill,
+        strokeColor: stroke,
+      });
+      paintPreviewCircleRef.current.setMap(map);
+    }
+  }, [paintModeActive, paintCenter, paintRadius, paintRisk, mapInstanceId]);
+
+  /* ── Render committed paint zones as polygons ── */
+  useEffect(() => {
+    if (!mapRef.current) return;
+    paintZonePolygonsRef.current.forEach((p) => p.setMap(null));
+    paintZonePolygonsRef.current = [];
+
+    if (focusMode) return; // focus mode hides canvas zones for cinematic view
+
+    const map = mapRef.current;
+    const time: "day" | "night" = nightMode ? "night" : "day";
+
+    paintZones.forEach((zone) => {
+      const effective =
+        zone.baseDayRisk * (time === "night" ? zone.nightMultiplier : 1);
+      const polygon = new google.maps.Polygon({
+        paths: zone.polygon.map((p) => ({ lat: p.lat, lng: p.lng })),
+        fillColor: effectiveRiskFill(effective),
+        fillOpacity: 0.55,
+        strokeColor: effectiveRiskStroke(effective),
+        strokeWeight: 2,
+        strokeOpacity: 0.9,
+        map,
+        clickable: false,
+        zIndex: 2,
+      });
+      paintZonePolygonsRef.current.push(polygon);
+    });
+  }, [paintZones, focusMode, nightMode, mapInstanceId]);
 
   // Traffic layer
   useEffect(() => {
@@ -688,11 +1138,14 @@ export function MapView({
         marker.map = map;
       }
 
-      // Radius circle
+      // Radius circle — hidden in focus mode (only the colourful icon
+      // remains). Circles are canvas-rendered and would otherwise show
+      // up grayscale, polluting the focus look.
       let circle = circleMap.get(incident.id);
+      const isFresh = !circle;
       if (!circle) {
         circle = new google.maps.Circle({
-          map,
+          map: focusMode ? null : map,
           center: incident.center,
           radius: incident.radius,
           fillColor: cfg.stroke,
@@ -707,7 +1160,28 @@ export function MapView({
       } else {
         circle.setCenter(incident.center);
         circle.setRadius(incident.radius);
-        circle.setMap(map);
+        circle.setMap(focusMode ? null : map);
+      }
+
+      // Brief pulse when an incident first appears — draws the eye to
+      // the new radius so investors immediately see what changed.
+      if (isFresh && circle) {
+        const baseRadius = incident.radius;
+        let elapsed = 0;
+        const ticks = 6;
+        const intervalId = setInterval(() => {
+          elapsed += 1;
+          if (!circle || elapsed > ticks) {
+            clearInterval(intervalId);
+            circle?.setRadius(baseRadius);
+            circle?.setOptions({ strokeWeight: 1.5 });
+            return;
+          }
+          const phase = elapsed / ticks;
+          const pulse = 1 + 0.18 * Math.sin(phase * Math.PI);
+          circle.setRadius(baseRadius * pulse);
+          circle.setOptions({ strokeWeight: 2.5 - phase });
+        }, 120);
       }
     });
 
@@ -721,7 +1195,7 @@ export function MapView({
       infoMap.get(id)?.close();
       infoMap.delete(id);
     });
-  }, [incidents, mapInstanceId, onIncidentRemove]);
+  }, [incidents, focusMode, mapInstanceId, onIncidentRemove]);
 
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
@@ -741,6 +1215,14 @@ export function MapView({
     incidentCirclesRef.current.clear();
     incidentInfoRef.current.forEach((w) => w.close());
     incidentInfoRef.current.clear();
+    if (focusOverlayRef.current) {
+      focusOverlayRef.current.setMap(null);
+      focusOverlayRef.current = null;
+    }
+    if (focusZonesOverlayRef.current) {
+      focusZonesOverlayRef.current.setMap(null);
+      focusZonesOverlayRef.current = null;
+    }
     hadRoutesRef.current = false;
     // Increment counter to re-trigger all drawing effects
     setMapInstanceId((prev) => prev + 1);
@@ -764,25 +1246,39 @@ export function MapView({
 
   return (
     <>
-      <GoogleMap
-        key={nightMode ? "dark" : "light"}
-        mapContainerStyle={MAP_CONTAINER}
-        center={mapCenter}
-        zoom={city.zoom}
-        onLoad={onMapLoad}
-        onClick={handleMapClick}
-        options={{
-          mapId: MAP_ID,
-          disableDefaultUI: false,
-          zoomControl: true,
-          mapTypeControl: false,
-          streetViewControl: false,
-          fullscreenControl: true,
-          gestureHandling: "greedy",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          colorScheme: nightMode ? "DARK" : "LIGHT" as any,
-        }}
-      />
+      {/* Scoped style: applies the grayscale filter ONLY to the basemap
+          canvas elements, not to DOM siblings (markers, OverlayView SVG)
+          inside the same map container. That way the colour-preserving
+          route overlay and AdvancedMarkerElement icons stay vivid. */}
+      <style>{`
+        .navshield-focus-canvas canvas {
+          filter: grayscale(1) contrast(1.05);
+          transition: filter 0.3s ease-out;
+        }
+      `}</style>
+      <div
+        className={`absolute inset-0 ${focusMode ? "navshield-focus-canvas" : ""}`}
+      >
+        <GoogleMap
+          key={nightMode ? "dark" : "light"}
+          mapContainerStyle={MAP_CONTAINER}
+          center={mapCenter}
+          zoom={city.zoom}
+          onLoad={onMapLoad}
+          onClick={handleMapClick}
+          options={{
+            mapId: MAP_ID,
+            disableDefaultUI: false,
+            zoomControl: true,
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: true,
+            gestureHandling: "greedy",
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            colorScheme: nightMode ? "DARK" : "LIGHT" as any,
+          }}
+        />
+      </div>
       <button
         onClick={handleCenterOnMe}
         className="absolute bottom-8 left-4 z-20 w-10 h-10 bg-white rounded-xl shadow-lg border border-slate-200 flex items-center justify-center hover:bg-slate-50 hover:shadow-xl transition-all active:scale-95"

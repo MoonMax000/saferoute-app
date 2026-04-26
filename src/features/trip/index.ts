@@ -1,5 +1,6 @@
 export { useTrip } from "./useTrip";
 export { TripPanel } from "./TripPanel";
+export { TripHUD } from "./TripHUD";
 export {
   distanceToPolyline,
   distanceToFinalVertex,

@@ -9,3 +9,4 @@ export { useIncidentsStore } from "./incidents-store";
 export { toRiskIncidents } from "./incidents-to-risk";
 export { IncidentsPanel } from "./IncidentsPanel";
 export { RerouteSuggestion } from "./RerouteSuggestion";
+export { RerouteModal } from "./RerouteModal";

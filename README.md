@@ -23,9 +23,10 @@ The safety model is **simulated** — there is no real crime data feed.
 7. **Start trip** — live `watchPosition` tracks GPS vs. the selected
    polyline, with on-route / drift / sustained-deviation / arrived states.
 
-A "Try Demo" button seeds the Sheraton → Po Nagar pair on Nha Trang,
-which crosses both calm tourist areas and the industrial edge — clean
-Safest-vs-Fastest split.
+A "Try Demo" button seeds **Hollywood Walk of Fame → Santa Monica Pier**
+on Los Angeles, which crosses the iconic risk gradient (tourist nightlife
+strip → upscale residential → coastal tourist) — a clean
+Safest-vs-Fastest split investors recognise immediately.
 
 ## Stack
 
@@ -62,7 +63,7 @@ Copy `.env.example` to `.env.local` and fill in:
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Browser key for Maps JS + Places | Restrict by **HTTP referrer** in Google Cloud Console |
 | `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | Map style ID | Required for `AdvancedMarkerElement` |
 | `GOOGLE_ROUTES_API_KEY` | **Server-only** key for Routes API | Restrict by **IP** (and to Routes API) in Cloud Console. In dev this falls back to `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, with a warning. |
-| `NEXT_PUBLIC_DEMO_CITY` | `nha-trang` (default) or `nyc` | Drives map centre, autocomplete bias, risk dataset, and seed addresses |
+| `NEXT_PUBLIC_DEMO_CITY` | `los-angeles` (default), `nyc`, or `nha-trang` | Drives map centre, autocomplete bias, risk dataset, and seed addresses |
 
 ## Local setup
 
@@ -142,8 +143,8 @@ labels and explanation strings.
 
 - [ ] **Map loads** centred on the configured demo city.
 - [ ] **Place autocomplete** in the origin / destination inputs is biased
-      to the demo city (e.g. typing "po na" suggests Po Nagar Towers in
-      the Nha Trang demo).
+      to the demo city (e.g. typing "santa mo" suggests Santa Monica Pier
+      in the Los Angeles demo).
 - [ ] **Try Demo** button populates origin + destination and renders three
       route cards.
 - [ ] **Day / Night toggle** changes the overlay colours AND re-orders /
