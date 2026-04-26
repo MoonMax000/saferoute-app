@@ -356,16 +356,45 @@ export default function Home() {
 
   const handleMapPinDrop = useCallback(
     (latlng: LatLng, address: string, mode: PinMode) => {
+      // Snapshot the post-click values so an auto-rebuild can dispatch
+      // `searchRoutes` without waiting for React state to propagate.
+      let nextOrigin = origin;
+      let nextDest = destination;
+      let nextOriginCoords = originCoords;
+      let nextDestCoords = destCoords;
+
       if (mode === "origin") {
         setOrigin(address);
         setOriginCoords(latlng);
+        nextOrigin = address;
+        nextOriginCoords = latlng;
       } else if (mode === "destination") {
         setDestination(address);
         setDestCoords(latlng);
+        nextDest = address;
+        nextDestCoords = latlng;
       }
       setPinMode(null);
+
+      // If both endpoints are now set — including the case where a
+      // route was already drawn and the user just moved A or B to a
+      // new spot via "Set on map" — re-run the search so the route,
+      // markers, and risk badges all refresh together. Without this
+      // the old route's start/end markers stay on screen on top of
+      // the new coords, which reads as "click did nothing".
+      if (nextOrigin.trim() && nextDest.trim()) {
+        setTimeout(
+          () =>
+            handleSearch(nextOrigin, nextDest, {
+              isDragRebuild: true,
+              originCoordsOverride: nextOriginCoords,
+              destCoordsOverride: nextDestCoords,
+            }),
+          200,
+        );
+      }
     },
-    []
+    [origin, destination, originCoords, destCoords, handleSearch],
   );
 
   const handleUserLocationChange = useCallback(
