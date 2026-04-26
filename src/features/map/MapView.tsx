@@ -890,6 +890,12 @@ export function MapView({
         const endPoint =
           option.route.polylinePath[option.route.polylinePath.length - 1];
 
+        inspectorLog("event", "map: creating endpoint markers", {
+          startPoint: { lat: Number(startPoint.lat.toFixed(5)), lng: Number(startPoint.lng.toFixed(5)) },
+          endPoint: { lat: Number(endPoint.lat.toFixed(5)), lng: Number(endPoint.lng.toFixed(5)) },
+          category: option.category,
+        });
+
         const startMarker = new AME({
           position: startPoint,
           map,
@@ -923,6 +929,14 @@ export function MapView({
         });
 
         markersRef.current.push(startMarker, endMarker);
+      } else if (isSelected) {
+        // Selected route is missing the marker condition — log why so we
+        // know whether AME or polylinePath is the culprit on production.
+        inspectorLog("warn", "map: skipping marker create for selected route", {
+          hasAME: !!AME,
+          pathLen: option.route.polylinePath.length,
+          category: option.category,
+        });
       }
     });
 
