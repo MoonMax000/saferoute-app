@@ -415,6 +415,13 @@ function getPos(p: google.maps.LatLng | google.maps.LatLngLiteral | null | undef
   return { lat, lng };
 }
 
+function getMarkerDragEndPos(
+  event: google.maps.MapMouseEvent,
+  marker: google.maps.marker.AdvancedMarkerElement | null | undefined,
+): LatLng | null {
+  return getPos(event.latLng) ?? getPos(marker?.position);
+}
+
 interface MapViewProps {
   routes: RouteOption[];
   showZones: boolean;
@@ -657,7 +664,10 @@ export function MapView({
   const clearPolylines = useCallback(() => {
     polylinesRef.current.forEach((p) => p.setMap(null));
     polylinesRef.current = [];
-    markersRef.current.forEach((m) => { m.map = null; });
+    markersRef.current.forEach((m) => {
+      google.maps.event.clearInstanceListeners(m);
+      m.map = null;
+    });
     markersRef.current = [];
   }, []);
 
@@ -787,8 +797,8 @@ export function MapView({
           zIndex: 30,
           title: "Start (drag to move)",
         });
-        originPreviewRef.current.addEventListener("gmp-dragend", () => {
-          const p = getPos(originPreviewRef.current?.position);
+        originPreviewRef.current.addListener("dragend", (event: google.maps.MapMouseEvent) => {
+          const p = getMarkerDragEndPos(event, originPreviewRef.current);
           if (p) reverseGeocode(p.lat, p.lng, "origin");
         });
       } else {
@@ -812,8 +822,8 @@ export function MapView({
           zIndex: 30,
           title: "Destination (drag to move)",
         });
-        destPreviewRef.current.addEventListener("gmp-dragend", () => {
-          const p = getPos(destPreviewRef.current?.position);
+        destPreviewRef.current.addListener("dragend", (event: google.maps.MapMouseEvent) => {
+          const p = getMarkerDragEndPos(event, destPreviewRef.current);
           if (p) reverseGeocode(p.lat, p.lng, "destination");
         });
       } else {
@@ -920,8 +930,8 @@ export function MapView({
           title: "Start (drag to reroute)",
         });
         attachMarker(startMarker);
-        startMarker.addEventListener("gmp-dragend", () => {
-          const p = getPos(startMarker.position);
+        startMarker.addListener("dragend", (event: google.maps.MapMouseEvent) => {
+          const p = getMarkerDragEndPos(event, startMarker);
           inspectorLog("event", "map: A marker dragend", {
             coords: p ? { lat: Number(p.lat.toFixed(5)), lng: Number(p.lng.toFixed(5)) } : null,
           });
@@ -936,8 +946,8 @@ export function MapView({
           title: "Destination (drag to reroute)",
         });
         attachMarker(endMarker);
-        endMarker.addEventListener("gmp-dragend", () => {
-          const p = getPos(endMarker.position);
+        endMarker.addListener("dragend", (event: google.maps.MapMouseEvent) => {
+          const p = getMarkerDragEndPos(event, endMarker);
           inspectorLog("event", "map: B marker dragend", {
             coords: p ? { lat: Number(p.lat.toFixed(5)), lng: Number(p.lng.toFixed(5)) } : null,
           });

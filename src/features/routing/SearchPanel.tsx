@@ -12,6 +12,8 @@ interface SearchPanelProps {
   isLoading: boolean;
   origin: string;
   destination: string;
+  originCoords?: LatLng | null;
+  destCoords?: LatLng | null;
   onOriginChange: (value: string) => void;
   onDestinationChange: (value: string) => void;
   onOriginCoordsChange?: (coords: LatLng | null) => void;
@@ -25,6 +27,8 @@ export function SearchPanel({
   isLoading,
   origin,
   destination,
+  originCoords,
+  destCoords,
   onOriginChange,
   onDestinationChange,
   onOriginCoordsChange,
@@ -52,8 +56,11 @@ export function SearchPanel({
 
   const handleSwap = () => {
     const tmpOrigin = origin;
+    const tmpOriginCoords = originCoords ?? null;
     onOriginChange(destination);
     onDestinationChange(tmpOrigin);
+    onOriginCoordsChange?.(destCoords ?? null);
+    onDestCoordsChange?.(tmpOriginCoords);
   };
 
   return (

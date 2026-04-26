@@ -84,6 +84,7 @@ export default function Home() {
   const [dismissedRerouteFor, setDismissedRerouteFor] = useState<string | null>(
     null,
   );
+  const searchSeqRef = useRef(0);
 
   const incidents = useIncidentsStore((s) => s.incidents);
   const addIncident = useIncidentsStore((s) => s.addIncident);
@@ -114,6 +115,16 @@ export default function Home() {
   // stable identity — re-renders only fire when the actual incident list
   // shifts.
   const riskIncidents = useMemo(() => toRiskIncidents(incidents), [incidents]);
+
+  const handleOriginInputChange = useCallback((value: string) => {
+    setOrigin(value);
+    setOriginCoords(null);
+  }, []);
+
+  const handleDestinationInputChange = useCallback((value: string) => {
+    setDestination(value);
+    setDestCoords(null);
+  }, []);
 
   const handlePaintMapClick = useCallback(
     (latlng: LatLng) => {
@@ -187,8 +198,10 @@ export default function Home() {
         hasDestOverride: !!destCoordsOverride,
       });
 
+      const seq = ++searchSeqRef.current;
       setIsLoading(true);
       setError(null);
+      setDismissedRerouteFor(null);
       if (!isDragRebuild) {
         setRoutes([]);
         setRawRoutes([]);
@@ -207,18 +220,25 @@ export default function Home() {
             coords: destCoordsOverride ?? destCoords,
           },
         });
+        if (seq !== searchSeqRef.current) return;
         inspectorLog("event", `handleSearch: API returned ${raw.length} routes`);
         if (raw.length === 0) {
           throw new Error("No routes found. Try different addresses.");
         }
         setRawRoutes(raw);
       } catch (err) {
+        if (seq !== searchSeqRef.current) return;
         const msg =
           err instanceof Error ? err.message : "Failed to calculate route";
         inspectorLog("warn", `handleSearch: error — ${msg}`);
         setError(msg);
+        setRoutes([]);
+        setRawRoutes([]);
+        setRouteAlerts([]);
       } finally {
-        setIsLoading(false);
+        if (seq === searchSeqRef.current) {
+          setIsLoading(false);
+        }
       }
     },
     [originCoords, destCoords],
@@ -494,7 +514,7 @@ export default function Home() {
       // updates from `setOrigin*` / `setDest*` and from
       // `setIsLoading` inside `handleSearch`) lands cleanly before
       // the next render, instead of trampling the just-fired
-      // `gmp-dragend` event chain. Imperceptible to the user, but
+      // marker `dragend` event chain. Imperceptible to the user, but
       // makes the auto-rebuild reliable on every drop.
       setTimeout(() => {
         inspectorLog("event", "marker drag: triggering handleSearch rebuild");
@@ -635,8 +655,10 @@ export default function Home() {
             isLoading={isLoading}
             origin={origin}
             destination={destination}
-            onOriginChange={setOrigin}
-            onDestinationChange={setDestination}
+            originCoords={originCoords}
+            destCoords={destCoords}
+            onOriginChange={handleOriginInputChange}
+            onDestinationChange={handleDestinationInputChange}
             onOriginCoordsChange={setOriginCoords}
             onDestCoordsChange={setDestCoords}
             pinMode={pinMode}

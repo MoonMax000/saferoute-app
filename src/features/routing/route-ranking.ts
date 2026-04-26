@@ -65,7 +65,9 @@ function buildRouteResult(
   const SEGMENT_LENGTH = 10;
   const segments: RouteSegment[] = [];
   for (let i = 0; i < scored.path.length - 1; i += SEGMENT_LENGTH) {
-    const end = Math.min(i + SEGMENT_LENGTH, scored.path.length);
+    // Include the boundary vertex in both adjacent segments so Google Maps
+    // draws continuous colored strokes instead of tiny gaps at risk changes.
+    const end = Math.min(i + SEGMENT_LENGTH + 1, scored.path.length);
     const segmentPath = scored.path.slice(i, end);
     const step = segmentPath.length < 6 ? 1 : 3;
     let maxRisk = 1;
