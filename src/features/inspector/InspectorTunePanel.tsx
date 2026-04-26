@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -277,6 +277,64 @@ function Section({
   );
 }
 
+/**
+ * Hook that gives a slider its own local state for visuals plus a
+ * throttled commit to the upstream store. Without it, every pixel of
+ * slider movement reruns `scoreRoute()` × 3 routes and rebuilds 20+
+ * canvas polygons — at 60+ events/sec that locks the UI up.
+ *
+ * - `localValue`     — drives the input + label, updates instantly
+ * - `commitThrottled`— pushes upstream at most every `delay` ms
+ * - `commitImmediate`— used on mouseup / touchend (final value)
+ */
+function useThrottledSlider(
+  externalValue: number,
+  upstream: (v: number) => void,
+  delay = 180,
+) {
+  const [localValue, setLocalValue] = useState(externalValue);
+  // Track the last external value we saw + whether the user is mid-
+  // drag, both as state so we can read them safely during render.
+  // ("setState during render" derived-state pattern — see React docs:
+  // You might not need an effect → adjusting state on prop change.)
+  const [lastExternal, setLastExternal] = useState(externalValue);
+  const [editing, setEditing] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  if (externalValue !== lastExternal) {
+    setLastExternal(externalValue);
+    if (!editing) {
+      setLocalValue(externalValue);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const onChange = (v: number) => {
+    setLocalValue(v);
+    if (!editing) setEditing(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      upstream(v);
+    }, delay);
+  };
+
+  const flush = (v: number) => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setEditing(false);
+    upstream(v);
+  };
+
+  return { localValue, onChange, flush };
+}
+
 function CellSlider({
   cell,
   overridden,
@@ -288,6 +346,8 @@ function CellSlider({
   onChange: (v: number) => void;
   onCommit: (v: number) => void;
 }) {
+  const slider = useThrottledSlider(cell.baseDayRisk, onChange);
+
   return (
     <div>
       <div className="flex items-center justify-between gap-2 text-[11px]">
@@ -300,7 +360,7 @@ function CellSlider({
         <span
           className={`tabular-nums font-mono font-bold ${overridden ? "text-violet-300" : "text-slate-200"}`}
         >
-          {cell.baseDayRisk.toFixed(1)}
+          {slider.localValue.toFixed(1)}
           {overridden && <span className="ml-1 text-[8px]">●</span>}
         </span>
       </div>
@@ -309,12 +369,18 @@ function CellSlider({
         min={0}
         max={10}
         step={0.1}
-        value={cell.baseDayRisk}
-        onChange={(e) => onChange(Number(e.target.value))}
-        onMouseUp={(e) => onCommit(Number((e.target as HTMLInputElement).value))}
-        onTouchEnd={(e) =>
-          onCommit(Number((e.target as HTMLInputElement).value))
-        }
+        value={slider.localValue}
+        onChange={(e) => slider.onChange(Number(e.target.value))}
+        onMouseUp={(e) => {
+          const v = Number((e.target as HTMLInputElement).value);
+          slider.flush(v);
+          onCommit(v);
+        }}
+        onTouchEnd={(e) => {
+          const v = Number((e.target as HTMLInputElement).value);
+          slider.flush(v);
+          onCommit(v);
+        }}
         className="w-full accent-violet-500 mt-0.5"
       />
     </div>
@@ -342,13 +408,15 @@ function SliderRow({
   onCommit: (v: number) => void;
   onReset?: () => void;
 }) {
+  const slider = useThrottledSlider(value, onChange);
+
   return (
     <div className="mb-2">
       <div className="flex items-center justify-between gap-2 text-[11px]">
         <span className="text-slate-300 font-medium">{label}</span>
         <span className="flex items-center gap-1.5">
           <span className="tabular-nums font-mono font-bold text-violet-300">
-            {value.toFixed(2)}
+            {slider.localValue.toFixed(2)}
           </span>
           {defaultLabel && (
             <span className="text-[9px] text-slate-500">{defaultLabel}</span>
@@ -370,12 +438,18 @@ function SliderRow({
         min={min}
         max={max}
         step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        onMouseUp={(e) => onCommit(Number((e.target as HTMLInputElement).value))}
-        onTouchEnd={(e) =>
-          onCommit(Number((e.target as HTMLInputElement).value))
-        }
+        value={slider.localValue}
+        onChange={(e) => slider.onChange(Number(e.target.value))}
+        onMouseUp={(e) => {
+          const v = Number((e.target as HTMLInputElement).value);
+          slider.flush(v);
+          onCommit(v);
+        }}
+        onTouchEnd={(e) => {
+          const v = Number((e.target as HTMLInputElement).value);
+          slider.flush(v);
+          onCommit(v);
+        }}
         className="w-full accent-violet-500 mt-0.5"
       />
     </div>
