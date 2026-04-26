@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { Info, Sparkles, Play, Square } from "lucide-react";
 import type { LatLng } from "@/shared/types";
+import { haversineDistance } from "@/shared/geo";
 import { MapControls } from "@/features/map";
 import type { PinMode } from "@/features/map";
 import { SearchPanel, RouteInfo, RouteAlerts } from "@/features/routing";
@@ -337,13 +338,33 @@ export default function Home() {
         return a.route.averageRisk - b.route.averageRisk;
       })[0];
     if (!candidate) return null;
+
+    // Find the incident (if any) that physically touches the selected
+    // route. Drives the modal headline ("Robbery report ahead" vs
+    // "Police activity ahead" etc.) and the icon. Sample every 6
+    // vertices so we don't scan tens of thousands of points.
+    let triggerIncident: typeof incidents[number] | null = null;
+    if (selected.incidentImpacts > 0 && incidents.length > 0) {
+      const path = selected.route.polylinePath;
+      outer: for (const inc of incidents) {
+        for (let i = 0; i < path.length; i += 6) {
+          if (haversineDistance(path[i], inc.center) <= inc.radius + 60) {
+            triggerIncident = inc;
+            break outer;
+          }
+        }
+      }
+    }
+
     // Encode current impact counts into the dismiss key so each new
     // incident creates a distinct suggestion that can re-prompt even
     // after the user dismissed an earlier round.
     const dismissKey = `${selected.id}->${candidate.id}@${selected.incidentImpacts}+${candidate.incidentImpacts}`;
     if (dismissedRerouteFor === dismissKey) return null;
     return {
+      selected,
       candidate,
+      triggerIncident,
       dismissKey,
       minutesAdded: Math.max(
         0,
@@ -352,7 +373,7 @@ export default function Home() {
         ),
       ),
     };
-  }, [routes, dismissedRerouteFor]);
+  }, [routes, dismissedRerouteFor, incidents]);
 
   const handleMapPinDrop = useCallback(
     (latlng: LatLng, address: string, mode: PinMode) => {
@@ -827,10 +848,21 @@ export default function Home() {
           <RerouteModal
             key={rerouteSuggestion.dismissKey}
             open={rerouteModalOpen}
-            triggerType="blockage"
-            alternativeLabel={rerouteSuggestion.candidate.label}
-            minutesAdded={rerouteSuggestion.minutesAdded}
-            reason={rerouteSuggestion.candidate.explanation}
+            triggerType={rerouteSuggestion.triggerIncident?.type ?? null}
+            current={{
+              label: rerouteSuggestion.selected.label,
+              durationSec: rerouteSuggestion.selected.durationSeconds,
+              distanceMeters: rerouteSuggestion.selected.distanceMeters,
+              avgRisk: rerouteSuggestion.selected.route.averageRisk,
+              incidentImpacts: rerouteSuggestion.selected.incidentImpacts,
+            }}
+            alternative={{
+              label: rerouteSuggestion.candidate.label,
+              durationSec: rerouteSuggestion.candidate.durationSeconds,
+              distanceMeters: rerouteSuggestion.candidate.distanceMeters,
+              avgRisk: rerouteSuggestion.candidate.route.averageRisk,
+              incidentImpacts: rerouteSuggestion.candidate.incidentImpacts,
+            }}
             autoDismissAfterSec={0}
             onAccept={() =>
               handleSelectRoute(rerouteSuggestion.candidate.id)
