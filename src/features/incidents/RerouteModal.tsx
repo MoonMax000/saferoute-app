@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
+  CheckCircle2,
   Clock,
   Construction,
   Map as MapIcon,
@@ -15,15 +16,21 @@ import {
 } from "lucide-react";
 import type { IncidentType } from "./incidents.types";
 import { INCIDENT_TYPES } from "./incidents-config";
+import type { RouteCategory, RouteTone } from "@/features/routing/route.types";
 
 /** Lightweight projection of `RouteOption` so this modal doesn't
- *  pull in the entire routing types graph. */
+ *  pull in the entire routing types graph.
+ *
+ *  `tone` and `category` mirror the RouteInfo card directly so the
+ *  modal stays visually consistent with the sidebar list. */
 export interface RerouteRouteSummary {
   label: string;
   durationSec: number;
   distanceMeters: number;
   avgRisk: number;
   incidentImpacts: number;
+  tone: RouteTone;
+  category: RouteCategory;
 }
 
 interface RerouteModalProps {
@@ -198,11 +205,14 @@ export function RerouteModal({
               </button>
             </div>
 
-            {/* Side-by-side comparison */}
+            {/* Side-by-side comparison — colours and labels match the
+                 RouteInfo cards in the sidebar so the user can map
+                 "Your route" → the card they actually selected. */}
             <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
               <RouteCard
-                label="Your route"
-                tone="warn"
+                role="current"
+                routeLabel={current.label}
+                tone={current.tone}
                 durationSec={current.durationSec}
                 distanceMeters={current.distanceMeters}
                 avgRisk={current.avgRisk}
@@ -212,8 +222,9 @@ export function RerouteModal({
                 <ArrowRight className="w-5 h-5" />
               </div>
               <RouteCard
-                label="Alternative"
-                tone="best"
+                role="alternative"
+                routeLabel={alternative.label}
+                tone={alternative.tone}
                 durationSec={alternative.durationSec}
                 distanceMeters={alternative.distanceMeters}
                 avgRisk={alternative.avgRisk}
@@ -278,49 +289,83 @@ export function RerouteModal({
 
 /* ─────────────── Route comparison card ─────────────── */
 
+/** Same tone palette as the RouteInfo sidebar cards — keeps the modal
+ *  visually consistent with the list the user is choosing from. */
+const TONE_STYLE: Record<
+  RouteTone,
+  {
+    ring: string;
+    bg: string;
+    dot: string;
+    labelColor: string;
+  }
+> = {
+  best: {
+    ring: "border-emerald-400/70",
+    bg: "bg-emerald-50/70",
+    dot: "bg-emerald-500 shadow-emerald-400/40",
+    labelColor: "text-emerald-800",
+  },
+  good: {
+    ring: "border-lime-400/70",
+    bg: "bg-lime-50/60",
+    dot: "bg-lime-500 shadow-lime-400/40",
+    labelColor: "text-lime-800",
+  },
+  neutral: {
+    ring: "border-amber-300/70",
+    bg: "bg-amber-50/50",
+    dot: "bg-amber-400 shadow-amber-400/40",
+    labelColor: "text-amber-800",
+  },
+  warn: {
+    ring: "border-rose-300/80",
+    bg: "bg-rose-50/50",
+    dot: "bg-rose-500 shadow-rose-400/40",
+    labelColor: "text-rose-800",
+  },
+};
+
 function RouteCard({
-  label,
+  role,
+  routeLabel,
   tone,
   durationSec,
   distanceMeters,
   avgRisk,
   incidentImpacts,
 }: {
-  label: string;
-  tone: "warn" | "best";
+  /** Which side of the comparison this card represents. */
+  role: "current" | "alternative";
+  /** The same label used in the sidebar list ("Safest Route", "Fastest
+   *  Route", "Balanced Route", etc) so the user can map back. */
+  routeLabel: string;
+  tone: RouteTone;
   durationSec: number;
   distanceMeters: number;
   avgRisk: number;
   incidentImpacts: number;
 }) {
-  const isBest = tone === "best";
-  const accent = isBest
-    ? {
-        ring: "border-emerald-300/70",
-        bg: "bg-emerald-50/60",
-        dot: "bg-emerald-500 shadow-emerald-400/40",
-        labelColor: "text-emerald-800",
-      }
-    : {
-        ring: "border-rose-200/80",
-        bg: "bg-rose-50/40",
-        dot: "bg-rose-500 shadow-rose-400/40",
-        labelColor: "text-rose-800",
-      };
+  const accent = TONE_STYLE[tone];
+  const subLabel =
+    role === "current" ? "Your current" : "Suggested switch";
 
   return (
     <div
       className={`rounded-xl border ${accent.ring} ${accent.bg} p-2.5 flex flex-col gap-1`}
     >
-      <div className="flex items-center gap-1.5">
-        <span
-          className={`w-2 h-2 rounded-full shadow-sm ${accent.dot}`}
-        />
-        <span
-          className={`text-[10px] font-bold uppercase tracking-widest ${accent.labelColor}`}
-        >
-          {label}
-        </span>
+      <div className="flex items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={`w-2 h-2 rounded-full shadow-sm ${accent.dot}`} />
+          <span
+            className={`text-[11px] font-bold tracking-tight ${accent.labelColor} truncate`}
+          >
+            {routeLabel}
+          </span>
+        </div>
+      </div>
+      <div className="text-[9.5px] font-bold uppercase tracking-widest text-slate-500">
+        {subLabel}
       </div>
       <div className="flex items-center gap-2.5 text-[12px] font-semibold text-slate-700">
         <span className="inline-flex items-center gap-1">
@@ -332,14 +377,22 @@ function RouteCard({
           {formatDistance(distanceMeters)}
         </span>
       </div>
-      <div className="flex items-center gap-2 text-[10.5px] text-slate-600">
-        <span className="font-mono tabular-nums font-bold">
+      <div className="flex items-center gap-2 text-[10.5px]">
+        <span className="font-mono tabular-nums font-bold text-slate-600">
           avgRisk {avgRisk.toFixed(1)}
         </span>
-        {incidentImpacts > 0 && (
-          <span className="font-bold text-rose-700">
-            · {incidentImpacts} incident{incidentImpacts === 1 ? "" : "s"}
+        {incidentImpacts > 0 ? (
+          <span className="inline-flex items-center gap-0.5 font-bold text-rose-700">
+            <AlertTriangle className="w-3 h-3" />
+            {incidentImpacts} incident{incidentImpacts === 1 ? "" : "s"}
           </span>
+        ) : (
+          role === "alternative" && (
+            <span className="inline-flex items-center gap-0.5 font-bold text-emerald-700">
+              <CheckCircle2 className="w-3 h-3" />
+              clear
+            </span>
+          )
         )}
       </div>
     </div>

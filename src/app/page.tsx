@@ -863,6 +863,8 @@ export default function Home() {
               distanceMeters: rerouteSuggestion.selected.distanceMeters,
               avgRisk: rerouteSuggestion.selected.route.averageRisk,
               incidentImpacts: rerouteSuggestion.selected.incidentImpacts,
+              tone: rerouteSuggestion.selected.tone,
+              category: rerouteSuggestion.selected.category,
             }}
             alternative={{
               label: rerouteSuggestion.candidate.label,
@@ -870,6 +872,8 @@ export default function Home() {
               distanceMeters: rerouteSuggestion.candidate.distanceMeters,
               avgRisk: rerouteSuggestion.candidate.route.averageRisk,
               incidentImpacts: rerouteSuggestion.candidate.incidentImpacts,
+              tone: rerouteSuggestion.candidate.tone,
+              category: rerouteSuggestion.candidate.category,
             }}
             autoDismissAfterSec={0}
             onAccept={() =>
