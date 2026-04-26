@@ -121,7 +121,7 @@ export function InspectorDebugPanel({
   if (!enabled) return null;
 
   return (
-    <div className="absolute top-16 right-4 z-20 w-[320px] rounded-2xl bg-slate-900/95 backdrop-blur-md text-slate-100 shadow-2xl border border-slate-700/60 overflow-hidden">
+    <div className="w-full rounded-2xl bg-slate-900/95 backdrop-blur-md text-slate-100 shadow-2xl border border-slate-700/60 overflow-hidden">
       <button
         type="button"
         onClick={() => togglePanel("debug")}
@@ -139,7 +139,7 @@ export function InspectorDebugPanel({
       </button>
 
       {open && (
-        <div className="px-4 pb-4 pt-2 space-y-3 text-[11px] font-mono leading-relaxed">
+        <div className="px-4 pb-4 pt-2 space-y-3 text-[11px] font-mono leading-relaxed max-h-[calc(100vh-18rem)] overflow-y-auto custom-scrollbar">
           <Section label="Time Context">
             <Row k="Mode" v={time} accent={time === "night" ? "violet" : "amber"} />
             <Row

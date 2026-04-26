@@ -108,7 +108,6 @@ export default function Home() {
   //   • paint mode click sets the centre of a custom risk zone.
   const inspectorEnabled = useInspectorStore((s) => s.enabled);
   const paintMode = useInspectorStore((s) => s.paintMode);
-  const paintZones = useInspectorStore((s) => s.paintZones);
   const setPaintCenter = useInspectorStore((s) => s.setPaintCenter);
 
   // Memoize the RiskIncident projection so MapView (and routing) get a
@@ -277,6 +276,13 @@ export default function Home() {
       },
     );
     setRoutes((prev) => {
+      const prevSelectedKey = prev.find((r) => r.selected)?.routeKey;
+      if (prevSelectedKey) {
+        const matched = ranked.find((r) => r.routeKey === prevSelectedKey);
+        if (matched) {
+          return ranked.map((r) => ({ ...r, selected: r === matched }));
+        }
+      }
       const prevSelectedCategory = prev.find((r) => r.selected)?.category;
       if (prevSelectedCategory) {
         const matched = ranked.find((r) => r.category === prevSelectedCategory);
@@ -389,7 +395,7 @@ export default function Home() {
     // Encode current impact counts into the dismiss key so each new
     // incident creates a distinct suggestion that can re-prompt even
     // after the user dismissed an earlier round.
-    const dismissKey = `${selected.id}->${candidate.id}@${selected.incidentImpacts}+${candidate.incidentImpacts}`;
+    const dismissKey = `${selected.routeKey}->${candidate.routeKey}@${selected.incidentImpacts}+${candidate.incidentImpacts}`;
     if (dismissedRerouteFor === dismissKey) return null;
     return {
       selected,
@@ -834,28 +840,34 @@ export default function Home() {
           paintCenter={paintMode.pendingCenter}
           paintRadius={paintMode.pendingRadius}
           paintRisk={paintMode.pendingRisk}
-          paintZones={paintZones}
           onPaintMapClick={handlePaintMapClick}
         />
 
-        <InspectorDebugPanel
-          routes={routes}
-          destinationRisk={destinationRisk}
-          incidents={incidents}
-          effectiveCells={effectiveCells}
-          nightMode={nightMode}
-          simulating={sim.simulating}
-          simPoint={sim.simPoint}
-          simSpeedKmh={sim.simSpeedKmh}
-          simProgress={sim.simProgress}
-        />
-        <InspectorTunePanel effectiveCells={effectiveCells} />
+        {inspectorEnabled && (
+          <div className="absolute top-16 right-4 bottom-[244px] z-20 w-[320px] max-w-[calc(100vw-2rem)] overflow-y-auto pr-1 custom-scrollbar">
+            <div className="flex flex-col gap-3">
+              <InspectorDebugPanel
+                routes={routes}
+                destinationRisk={destinationRisk}
+                incidents={incidents}
+                effectiveCells={effectiveCells}
+                nightMode={nightMode}
+                simulating={sim.simulating}
+                simPoint={sim.simPoint}
+                simSpeedKmh={sim.simSpeedKmh}
+                simProgress={sim.simProgress}
+              />
+              <InspectorTunePanel effectiveCells={effectiveCells} />
+            </div>
+          </div>
+        )}
         <InspectorPaintOverlay />
         <VerificationRunner
           routes={routes}
           simulating={sim.simulating}
           startSim={sim.start}
           stopSim={sim.stop}
+          onSelectRoute={handleSelectRoute}
           addIncident={(input) =>
             addIncident({ type: input.type, center: input.center })
           }
@@ -930,6 +942,7 @@ export default function Home() {
               category: rerouteSuggestion.candidate.category,
             }}
             autoDismissAfterSec={0}
+            showTechnicalMetrics={inspectorEnabled}
             onAccept={() =>
               handleSelectRoute(rerouteSuggestion.candidate.id)
             }

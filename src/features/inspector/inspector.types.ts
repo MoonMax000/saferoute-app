@@ -58,6 +58,7 @@ export type VerificationPhase =
   | "starting"
   | "driving"
   | "incident-placed"
+  | "reroute-switched"
   | "night-toggled"
   | "completing"
   | "done";

@@ -84,7 +84,7 @@ export function InspectorTunePanel({ effectiveCells }: InspectorTunePanelProps) 
   if (!enabled) return null;
 
   return (
-    <div className="absolute top-16 right-[340px] z-20 w-[300px] rounded-2xl bg-slate-900/95 backdrop-blur-md text-slate-100 shadow-2xl border border-slate-700/60 overflow-hidden">
+    <div className="w-full rounded-2xl bg-slate-900/95 backdrop-blur-md text-slate-100 shadow-2xl border border-slate-700/60 overflow-hidden">
       <button
         type="button"
         onClick={() => togglePanel("tune")}
@@ -102,7 +102,7 @@ export function InspectorTunePanel({ effectiveCells }: InspectorTunePanelProps) 
       </button>
 
       {open && (
-        <div className="px-4 pb-4 pt-2 space-y-4 max-h-[60vh] overflow-y-auto">
+        <div className="px-4 pb-4 pt-2 space-y-4 max-h-[min(60vh,420px)] overflow-y-auto custom-scrollbar">
           {/* Neighborhood risk sliders */}
           <Section
             label="Neighborhood Risk"

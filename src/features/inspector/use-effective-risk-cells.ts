@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import type { RiskCell } from "@/features/risk";
 import { getCityRiskCells } from "@/features/risk";
 import { clientEnv } from "@/lib/env";
-import { useInspectorStore } from "./inspector-store";
+import { buildPaintZone, useInspectorStore } from "./inspector-store";
 import { useRiskConfigStore } from "./risk-config-store";
 
 /**
@@ -20,6 +20,7 @@ export function useEffectiveRiskCells(): RiskCell[] {
   const overrides = useRiskConfigStore((s) => s.overrides);
   const globalMult = useRiskConfigStore((s) => s.globalNightMultiplier);
   const paintZones = useInspectorStore((s) => s.paintZones);
+  const paintMode = useInspectorStore((s) => s.paintMode);
 
   return useMemo(() => {
     const base = getCityRiskCells(clientEnv.NEXT_PUBLIC_DEMO_CITY);
@@ -31,6 +32,19 @@ export function useEffectiveRiskCells(): RiskCell[] {
         nightMultiplier: globalMult ?? c.nightMultiplier,
       };
     });
-    return [...merged, ...paintZones];
-  }, [overrides, globalMult, paintZones]);
+    const previewZone =
+      paintMode.active && paintMode.pendingCenter
+        ? buildPaintZone({
+            id: "paint-preview",
+            label: "Paint Preview",
+            center: paintMode.pendingCenter,
+            radius: paintMode.pendingRadius,
+            risk: paintMode.pendingRisk,
+            createdAt: 0,
+          })
+        : null;
+    return previewZone
+      ? [...merged, ...paintZones, previewZone]
+      : [...merged, ...paintZones];
+  }, [overrides, globalMult, paintZones, paintMode]);
 }

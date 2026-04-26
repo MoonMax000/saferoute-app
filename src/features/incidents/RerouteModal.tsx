@@ -44,6 +44,8 @@ interface RerouteModalProps {
   alternative: RerouteRouteSummary;
   /** Auto-dismiss countdown in seconds. 0 = no countdown. */
   autoDismissAfterSec?: number;
+  /** Shows raw scoring values only inside Inspector/proof mode. */
+  showTechnicalMetrics?: boolean;
   onAccept: () => void;
   onDismiss: () => void;
 }
@@ -75,6 +77,7 @@ export function RerouteModal({
   current,
   alternative,
   autoDismissAfterSec = 0,
+  showTechnicalMetrics = false,
   onAccept,
   onDismiss,
 }: RerouteModalProps) {
@@ -130,12 +133,17 @@ export function RerouteModal({
         : "text-slate-600";
 
   // Headline copy for risk delta.
-  const riskDeltaLabel =
-    riskDelta >= 0.5
+  const riskDeltaLabel = showTechnicalMetrics
+    ? riskDelta >= 0.5
       ? `↓ ${riskDelta.toFixed(1)} avgRisk`
       : riskDelta <= -0.5
         ? `↑ ${Math.abs(riskDelta).toFixed(1)} avgRisk`
-        : "Comparable risk";
+        : "Comparable risk"
+    : riskDelta >= 0.5
+      ? "Lower exposure"
+      : riskDelta <= -0.5
+        ? "Higher exposure"
+        : "Comparable exposure";
   const riskDeltaTone =
     riskDelta >= 0.5
       ? "text-emerald-700"
@@ -151,6 +159,7 @@ export function RerouteModal({
     incidentDelta,
     riskDelta,
     minDelta,
+    showTechnicalMetrics,
   });
 
   return (
@@ -217,6 +226,7 @@ export function RerouteModal({
                 distanceMeters={current.distanceMeters}
                 avgRisk={current.avgRisk}
                 incidentImpacts={current.incidentImpacts}
+                showTechnicalMetrics={showTechnicalMetrics}
               />
               <div className="flex items-center justify-center text-slate-400">
                 <ArrowRight className="w-5 h-5" />
@@ -229,6 +239,7 @@ export function RerouteModal({
                 distanceMeters={alternative.distanceMeters}
                 avgRisk={alternative.avgRisk}
                 incidentImpacts={alternative.incidentImpacts}
+                showTechnicalMetrics={showTechnicalMetrics}
               />
             </div>
 
@@ -334,6 +345,7 @@ function RouteCard({
   distanceMeters,
   avgRisk,
   incidentImpacts,
+  showTechnicalMetrics,
 }: {
   /** Which side of the comparison this card represents. */
   role: "current" | "alternative";
@@ -345,10 +357,12 @@ function RouteCard({
   distanceMeters: number;
   avgRisk: number;
   incidentImpacts: number;
+  showTechnicalMetrics: boolean;
 }) {
   const accent = TONE_STYLE[tone];
   const subLabel =
     role === "current" ? "Your current" : "Suggested switch";
+  const exposureLabel = exposureFromRisk(avgRisk);
 
   return (
     <div
@@ -378,8 +392,16 @@ function RouteCard({
         </span>
       </div>
       <div className="flex items-center gap-2 text-[10.5px]">
-        <span className="font-mono tabular-nums font-bold text-slate-600">
-          avgRisk {avgRisk.toFixed(1)}
+        <span
+          className={
+            showTechnicalMetrics
+              ? "font-mono tabular-nums font-bold text-slate-600"
+              : "font-bold text-slate-600"
+          }
+        >
+          {showTechnicalMetrics
+            ? `avgRisk ${avgRisk.toFixed(1)}`
+            : exposureLabel}
         </span>
         {incidentImpacts > 0 ? (
           <span className="inline-flex items-center gap-0.5 font-bold text-rose-700">
@@ -407,8 +429,16 @@ function buildWhyText(args: {
   incidentDelta: number;
   riskDelta: number;
   minDelta: number;
+  showTechnicalMetrics: boolean;
 }): string {
-  const { triggerType, cfg, incidentDelta, riskDelta, minDelta } = args;
+  const {
+    triggerType,
+    cfg,
+    incidentDelta,
+    riskDelta,
+    minDelta,
+    showTechnicalMetrics,
+  } = args;
 
   if (triggerType && cfg) {
     if (incidentDelta > 0) {
@@ -422,12 +452,21 @@ function buildWhyText(args: {
   }
 
   if (riskDelta >= 1) {
-    return `Conditions shifted — the alternative is meaningfully safer (avgRisk down ${riskDelta.toFixed(1)})${minDelta > 0 ? `, costs ${minDelta} min` : ""}.`;
+    return showTechnicalMetrics
+      ? `Conditions shifted — the alternative is meaningfully safer (avgRisk down ${riskDelta.toFixed(1)})${minDelta > 0 ? `, costs ${minDelta} min` : ""}.`
+      : `Conditions shifted — the alternative has meaningfully lower exposure${minDelta > 0 ? ` for ${minDelta} min more` : ""}.`;
   }
   if (incidentDelta > 0) {
     return `Conditions shifted — the alternative avoids ${incidentDelta} incident${incidentDelta === 1 ? "" : "s"}.`;
   }
   return "A better balance of time and exposure is now available.";
+}
+
+function exposureFromRisk(avgRisk: number): string {
+  if (avgRisk <= 3.2) return "Low exposure";
+  if (avgRisk <= 5.2) return "Moderate exposure";
+  if (avgRisk <= 7) return "Elevated exposure";
+  return "High exposure";
 }
 
 /* ─────────────── Formatters ─────────────── */

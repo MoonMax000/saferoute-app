@@ -40,7 +40,7 @@ interface InspectorState {
  * radius in metres. Same equirectangular trick used in `city-risk-data.ts`
  * for built-in cells.
  */
-function generatePaintPolygon(
+export function generatePaintPolygon(
   center: LatLng,
   radiusM: number,
   steps = 16,
@@ -58,6 +58,28 @@ function generatePaintPolygon(
     });
   }
   return pts;
+}
+
+export function buildPaintZone(input: {
+  id: string;
+  label: string;
+  center: LatLng;
+  radius: number;
+  risk: number;
+  createdAt: number;
+}): PaintZone {
+  return {
+    id: input.id,
+    label: input.label,
+    center: input.center,
+    radius: input.radius,
+    baseDayRisk: input.risk,
+    nightMultiplier: 1.3,
+    tags: [],
+    polygon: generatePaintPolygon(input.center, input.radius),
+    source: "paint",
+    createdAt: input.createdAt,
+  };
 }
 
 function newPaintId(): string {
@@ -103,19 +125,14 @@ export const useInspectorStore = create<InspectorState>((set, get) => ({
   commitPaintZone: () => {
     const { pendingCenter, pendingRadius, pendingRisk } = get().paintMode;
     if (!pendingCenter) return;
-    const id = newPaintId();
-    const zone: PaintZone = {
-      id,
-      label: `Custom Zone (${pendingRisk}/10)`,
+    const zone = buildPaintZone({
+      id: newPaintId(),
+      label: "Custom Risk Zone",
       center: pendingCenter,
       radius: pendingRadius,
-      baseDayRisk: pendingRisk,
-      nightMultiplier: 1.3,
-      tags: [],
-      polygon: generatePaintPolygon(pendingCenter, pendingRadius),
-      source: "paint",
+      risk: pendingRisk,
       createdAt: Date.now(),
-    };
+    });
     set((s) => ({
       paintZones: [...s.paintZones, zone],
       paintMode: {

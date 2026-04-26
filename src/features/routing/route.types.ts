@@ -45,6 +45,8 @@ export interface RouteResult {
 
 export interface RouteOption {
   id: number;
+  /** Stable identity for preserving the same physical route across re-ranks. */
+  routeKey: string;
   /** Human-readable badge: "Safest Route", "Fastest", etc. */
   label: string;
   /** Display category that drives layout / ordering. */

@@ -16,6 +16,7 @@ interface VerificationRunnerProps {
   simulating: boolean;
   startSim: () => void;
   stopSim: () => void;
+  onSelectRoute: (id: number) => void;
   addIncident: (input: {
     type: "robbery" | "police" | "blockage";
     center: LatLng;
@@ -40,6 +41,7 @@ export function VerificationRunner({
   simulating,
   startSim,
   stopSim,
+  onSelectRoute,
   addIncident,
   nightMode,
   setNightMode,
@@ -52,7 +54,7 @@ export function VerificationRunner({
   // Snapshot taken at start so the summary modal can quote before/after.
   const preStateRef = useRef<{
     preAvg: number | null;
-    preSelectedId: number | null;
+    preRouteKey: string | null;
     preNight: boolean;
     preLogCount: number;
   } | null>(null);
@@ -62,6 +64,11 @@ export function VerificationRunner({
   useEffect(() => {
     routesRef.current = routes;
   }, [routes]);
+
+  const simulatingRef = useRef(simulating);
+  useEffect(() => {
+    simulatingRef.current = simulating;
+  }, [simulating]);
 
   const clearTimers = () => {
     timersRef.current.forEach((t) => clearTimeout(t));
@@ -89,7 +96,7 @@ export function VerificationRunner({
 
     preStateRef.current = {
       preAvg: selected.route.averageRisk,
-      preSelectedId: selected.id,
+      preRouteKey: selected.routeKey,
       preNight: nightMode,
       preLogCount: getInspectorLog().length,
     };
@@ -129,6 +136,52 @@ export function VerificationRunner({
       }, 8000),
     );
 
+    // t+12s — after the incident has forced a re-rank, prove route
+    // selection is still a real user action by switching only here.
+    timersRef.current.push(
+      setTimeout(() => {
+        const cur =
+          routesRef.current.find((r) => r.selected) ?? routesRef.current[0];
+        if (!cur) return;
+
+        const candidate = routesRef.current
+          .filter((r) => r.routeKey !== cur.routeKey)
+          .filter(
+            (r) =>
+              r.incidentImpacts < cur.incidentImpacts ||
+              r.route.averageRisk + 0.25 < cur.route.averageRisk,
+          )
+          .sort((a, b) => {
+            if (a.incidentImpacts !== b.incidentImpacts) {
+              return a.incidentImpacts - b.incidentImpacts;
+            }
+            if (a.route.averageRisk !== b.route.averageRisk) {
+              return a.route.averageRisk - b.route.averageRisk;
+            }
+            return a.durationSeconds - b.durationSeconds;
+          })[0];
+
+        if (!candidate) {
+          inspectorLog(
+            "warn",
+            "verification: no safer candidate found after incident",
+          );
+          return;
+        }
+
+        onSelectRoute(candidate.id);
+        setPhase("reroute-switched");
+        inspectorLog("event", "verification: switched to safer route", {
+          from: cur.label,
+          to: candidate.label,
+          incidentDelta: cur.incidentImpacts - candidate.incidentImpacts,
+          avgRiskDelta: Number(
+            (cur.route.averageRisk - candidate.route.averageRisk).toFixed(2),
+          ),
+        });
+      }, 12000),
+    );
+
     // t+16s — toggle Night so Russ sees the multiplier kick in
     timersRef.current.push(
       setTimeout(() => {
@@ -165,7 +218,7 @@ export function VerificationRunner({
             (e.msg.includes("verification:") || e.msg.includes("incident")),
         ).length;
         const rerouteSwitched = pre
-          ? cur?.id !== pre.preSelectedId
+          ? cur?.routeKey !== pre.preRouteKey
           : false;
 
         const built: VerificationSummary = {
@@ -188,7 +241,7 @@ export function VerificationRunner({
         });
 
         // Stop the simulation gracefully.
-        if (simulating) stopSim();
+        if (simulatingRef.current) stopSim();
       }, 30000),
     );
   };
@@ -207,7 +260,8 @@ export function VerificationRunner({
     idle: "Run verification (30s)",
     starting: "Starting…",
     driving: "Driving — placing incident in 8s…",
-    "incident-placed": "Robbery placed — toggling night in 8s…",
+    "incident-placed": "Robbery placed — checking alternatives…",
+    "reroute-switched": "Safer route selected — toggling night…",
     "night-toggled": "Night ON — collecting result…",
     completing: "Wrapping up…",
     done: "Run verification again",
@@ -217,13 +271,13 @@ export function VerificationRunner({
     <>
       {/* Floating Run button — sits to the left of the InspectorToggle so
           it doesn't collide with the right-stacked panels. */}
-      <div className="absolute top-4 right-[155px] z-30">
+      <div className="absolute top-4 left-4 sm:left-auto sm:right-[155px] z-30">
         {!running ? (
           <button
             type="button"
             onClick={start}
             disabled={routes.length === 0}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-fuchsia-600 to-violet-600 hover:from-fuchsia-500 hover:to-violet-500 text-white shadow-lg shadow-violet-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+            className="flex max-w-[calc(100vw-10rem)] items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-fuchsia-600 to-violet-600 hover:from-fuchsia-500 hover:to-violet-500 text-white shadow-lg shadow-violet-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
             title="Auto-runs a 30-second scenario that drives the engine through every code path while logging each step"
           >
             <Beaker className="w-3.5 h-3.5" />
@@ -233,7 +287,7 @@ export function VerificationRunner({
           <button
             type="button"
             onClick={cancel}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-lg ring-2 ring-amber-400/40 transition-all"
+            className="flex max-w-[calc(100vw-10rem)] items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-lg ring-2 ring-amber-400/40 transition-all"
           >
             <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
             {phaseLabel[phase]}

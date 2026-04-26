@@ -262,6 +262,9 @@ function makeOption(
 ): RouteOption {
   return {
     id: meta.id,
+    routeKey:
+      scored.encodedPolyline ||
+      `${scored.description ?? "route"}:${scored.distance}:${scored.duration}`,
     label: meta.label,
     category: meta.category,
     tone: deriveTone(scored, fastestDuration, meta.isTopPick),
@@ -378,7 +381,7 @@ function buildSafestExplanation(
   const tail = minutesAdded > 0 ? ` (+${minutesAdded} min vs Fastest)` : "";
 
   if (riskDelta >= 1.5) {
-    return `Lowest-risk path — avgRisk ${safest.avgRisk.toFixed(1)} vs ${fastest.avgRisk.toFixed(1)} on Fastest${tail}.`;
+    return `Lowest-exposure path with a clear safety edge over Fastest${tail}.`;
   }
   if (safest.highRiskFraction <= 0.05) {
     return `Avoids higher-risk areas${tail}.`;

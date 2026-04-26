@@ -456,8 +456,6 @@ interface MapViewProps {
   paintCenter?: LatLng | null;
   paintRadius?: number;
   paintRisk?: number;
-  /** Already-committed paint zones (rendered as polygons). */
-  paintZones?: RiskCell[];
   onPaintMapClick?: (latlng: LatLng) => void;
   /** True while a fresh route search is in flight after a drag/repin.
    *  Used to dim the previous route polylines so the user sees the
@@ -492,7 +490,6 @@ export function MapView({
   paintCenter = null,
   paintRadius = 250,
   paintRisk = 7,
-  paintZones = [],
   onPaintMapClick,
   isRebuilding = false,
 }: MapViewProps) {
@@ -530,7 +527,6 @@ export function MapView({
   /* Inspector mode refs */
   const inspectorInfoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const paintPreviewCircleRef = useRef<google.maps.Circle | null>(null);
-  const paintZonePolygonsRef = useRef<google.maps.Polygon[]>([]);
   /**
    * Snapshot of which click-action modes are currently active.
    * Polygon click listeners (created once per cell) read this ref to
@@ -1159,35 +1155,6 @@ export function MapView({
       paintPreviewCircleRef.current.setMap(map);
     }
   }, [paintModeActive, paintCenter, paintRadius, paintRisk, mapInstanceId]);
-
-  /* ── Render committed paint zones as polygons ── */
-  useEffect(() => {
-    if (!mapRef.current) return;
-    paintZonePolygonsRef.current.forEach((p) => p.setMap(null));
-    paintZonePolygonsRef.current = [];
-
-    if (focusMode) return; // focus mode hides canvas zones for cinematic view
-
-    const map = mapRef.current;
-    const time: "day" | "night" = nightMode ? "night" : "day";
-
-    paintZones.forEach((zone) => {
-      const effective =
-        zone.baseDayRisk * (time === "night" ? zone.nightMultiplier : 1);
-      const polygon = new google.maps.Polygon({
-        paths: zone.polygon.map((p) => ({ lat: p.lat, lng: p.lng })),
-        fillColor: effectiveRiskFill(effective),
-        fillOpacity: 0.55,
-        strokeColor: effectiveRiskStroke(effective),
-        strokeWeight: 2,
-        strokeOpacity: 0.9,
-        map,
-        clickable: false,
-        zIndex: 2,
-      });
-      paintZonePolygonsRef.current.push(polygon);
-    });
-  }, [paintZones, focusMode, nightMode, mapInstanceId]);
 
   // Traffic layer
   useEffect(() => {
