@@ -26,11 +26,11 @@ export function MapControls({
 }: MapControlsProps) {
   return (
     <div className="bg-slate-50/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-200/60 shadow-sm">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-          Map Controls
-        </h3>
-        <div className="flex gap-1.5">
+      <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+        Map Controls
+      </h3>
+      <div className="mb-4">
+        <div className="flex flex-wrap gap-1.5">
           <button
             onClick={onToggleNightMode}
             className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all duration-200 ${
