@@ -4,12 +4,53 @@ import type {
   RouteOption,
   RouteResult,
   RouteSegment,
+  RouteTone,
 } from "./route.types";
 import { pathSimilarity, type ScoredRoute } from "./route-exposure";
 import { evaluatePointRisk } from "@/features/risk";
 import type { RiskCell, TimeContext } from "@/features/risk";
 
+/** Two routes counted as "essentially the same path". */
 const SAFEST_VS_FASTEST_SIMILARITY = 0.85;
+/**
+ * If the safest route is no more than this many seconds slower than
+ * the actual fastest one, we collapse them into a single "Best" card.
+ * Otherwise the user sees a confusing "Fastest is slower than Safest"
+ * row — because deduplication forces us to pick a different route as
+ * the Fastest label even when the Safest already won on time too.
+ */
+const BEST_OF_BOTH_THRESHOLD_SEC = 60;
+
+/* ─────────────────────── Tone derivation ─────────────────────── */
+
+/**
+ * Map a scored route to a visual tone based on:
+ *  - absolute risk (avgRisk on a 1..10 scale)
+ *  - relative slowness vs the fastest route
+ *  - presence of touched incidents
+ *
+ * Higher tone = greener card + "this is a good choice" UX.
+ */
+function deriveTone(
+  scored: ScoredRoute,
+  fastestDuration: number,
+  isTopPick: boolean,
+): RouteTone {
+  if (isTopPick) return "best";
+
+  const overFastestSec = Math.max(0, scored.duration - fastestDuration);
+  const slownessPenalty = overFastestSec / 60; // 1 unit per minute
+  const riskPenalty = scored.avgRisk; // 1..10
+  const incidentPenalty = scored.incidentImpacts * 1.5;
+
+  const score = riskPenalty + slownessPenalty * 0.5 + incidentPenalty;
+
+  if (score <= 3.5) return "good";
+  if (score <= 6) return "neutral";
+  return "warn";
+}
+
+/* ─────────────────────── Route building ─────────────────────── */
 
 /**
  * Convert a scored route into the segment-decorated `RouteResult` the map
@@ -49,10 +90,14 @@ function buildRouteResult(
   };
 }
 
+/* ─────────────────────── Ranking ─────────────────────── */
+
 /**
- * Pick up to three meaningfully distinct routes and assign the Safest /
- * Fastest / Balanced labels. If fewer distinct routes exist, the function
- * gracefully returns fewer cards rather than fabricating duplicates.
+ * Pick the meaningful set of route cards to show, with honest labels:
+ *
+ *  - 1 distinct route                  → "Recommended" (only choice)
+ *  - safest ≈ fastest (≤60s slower)    → "Best", + alternative(s)
+ *  - safest noticeably slower          → "Safest", "Balanced", "Fastest"
  */
 export function rankRoutes(
   scored: ScoredRoute[],
@@ -61,99 +106,163 @@ export function rankRoutes(
 ): RouteOption[] {
   if (scored.length === 0) return [];
 
+  const fastestDurationOverall = Math.min(...scored.map((s) => s.duration));
+
   if (scored.length === 1) {
     const only = scored[0];
     return [
-      makeOption(only, cells, time, {
+      makeOption(only, cells, time, fastestDurationOverall, {
         id: 0,
         category: "recommended",
         label: "Recommended Route",
         explanation: buildSingleExplanation(only),
+        isTopPick: true,
       }),
     ];
   }
 
-  // Identify safest = lowest avgRisk; fastest = lowest duration.
   const bySafe = [...scored].sort((a, b) => a.avgRisk - b.avgRisk);
   const safest = bySafe[0];
   const byFast = [...scored].sort((a, b) => a.duration - b.duration);
-  const fastest = byFast[0] === safest ? byFast[1] : byFast[0];
+  const trueFastest = byFast[0];
 
-  // If safest and fastest end up being the same route, just label it Recommended.
+  // ── CASE A: safest IS the fastest (or close to it). Don't mislead
+  // the user with a slower "Fastest" card — collapse into a single
+  // "Best" recommendation and surface real alternatives.
+  const safestSlownessVsFastest = safest.duration - trueFastest.duration;
+  if (safestSlownessVsFastest <= BEST_OF_BOTH_THRESHOLD_SEC) {
+    const options: RouteOption[] = [];
+
+    options.push(
+      makeOption(safest, cells, time, fastestDurationOverall, {
+        id: 0,
+        category: "best",
+        label: "Recommended",
+        explanation: buildBestExplanation(safest, trueFastest),
+        isTopPick: true,
+      }),
+    );
+
+    // Surface up to 2 alternatives, ranked by being meaningfully
+    // different in path AND offering some honest trade-off.
+    const alternatives = scored
+      .filter((r) => r !== safest)
+      .map((r) => ({
+        route: r,
+        sim: pathSimilarity(r.path, safest.path),
+      }))
+      .filter((x) => x.sim < SAFEST_VS_FASTEST_SIMILARITY)
+      .sort((a, b) => a.sim - b.sim) // most distinct first
+      .slice(0, 2)
+      .map((x) => x.route);
+
+    alternatives.forEach((alt) => {
+      options.push(
+        makeOption(alt, cells, time, fastestDurationOverall, {
+          id: options.length,
+          category: "alternative",
+          label:
+            alt.duration < safest.duration
+              ? "Faster Alternative"
+              : "Different Path",
+          explanation: buildAlternativeExplanation(alt, safest),
+          isTopPick: false,
+        }),
+      );
+    });
+
+    options.forEach((o, i) => (o.id = i));
+    if (options.length > 0) options[0].selected = true;
+    return options;
+  }
+
+  // ── CASE B: Safest and Fastest are genuinely different routes.
+  const fastest = trueFastest === safest ? byFast[1] : trueFastest;
   if (!fastest || fastest === safest) {
     return [
-      makeOption(safest, cells, time, {
+      makeOption(safest, cells, time, fastestDurationOverall, {
         id: 0,
         category: "recommended",
         label: "Recommended Route",
         explanation: buildSingleExplanation(safest),
+        isTopPick: true,
       }),
     ];
   }
 
-  const minutesSavedFastest = Math.max(
+  const minutesAddedForSafest = Math.max(
     0,
     Math.round((safest.duration - fastest.duration) / 60),
   );
 
   const options: RouteOption[] = [];
 
-  // Safest first (so it reads top-to-bottom from safer to faster on the card list).
   options.push(
-    makeOption(safest, cells, time, {
+    makeOption(safest, cells, time, fastestDurationOverall, {
       id: 0,
       category: "safest",
       label: "Safest Route",
-      explanation: buildSafestExplanation(safest, fastest, minutesSavedFastest),
+      explanation: buildSafestExplanation(
+        safest,
+        fastest,
+        minutesAddedForSafest,
+      ),
+      isTopPick: true,
     }),
   );
 
-  // Try to add a balanced option that is meaningfully different from both.
   const balanced = pickBalanced(scored, safest, fastest);
   if (balanced) {
     options.push(
-      makeOption(balanced, cells, time, {
+      makeOption(balanced, cells, time, fastestDurationOverall, {
         id: 1,
         category: "balanced",
         label: "Balanced Route",
-        explanation: buildBalancedExplanation(balanced, fastest),
+        explanation: buildBalancedExplanation(balanced, safest, fastest),
+        isTopPick: false,
       }),
     );
   }
 
   options.push(
-    makeOption(fastest, cells, time, {
+    makeOption(fastest, cells, time, fastestDurationOverall, {
       id: options.length,
       category: "fastest",
       label: "Fastest Route",
-      explanation: buildFastestExplanation(fastest, safest, minutesSavedFastest),
+      explanation: buildFastestExplanation(
+        fastest,
+        safest,
+        minutesAddedForSafest,
+      ),
+      isTopPick: false,
     }),
   );
 
-  // Reassign deterministic ids in case balanced was skipped.
   options.forEach((o, i) => (o.id = i));
-
-  // Mark the safest as selected by default.
   if (options.length > 0) options[0].selected = true;
-
   return options;
 }
+
+/* ─────────────────────── makeOption ─────────────────────── */
 
 function makeOption(
   scored: ScoredRoute,
   cells: RiskCell[],
   time: TimeContext,
+  fastestDuration: number,
   meta: {
     id: number;
     category: RouteCategory;
     label: string;
     explanation: string;
+    isTopPick: boolean;
   },
 ): RouteOption {
   return {
     id: meta.id,
     label: meta.label,
     category: meta.category,
+    tone: deriveTone(scored, fastestDuration, meta.isTopPick),
     explanation: meta.explanation,
     description: scored.description,
     route: buildRouteResult(scored, cells, time),
@@ -165,6 +274,8 @@ function makeOption(
   };
 }
 
+/* ─────────────────────── Balanced picker ─────────────────────── */
+
 function pickBalanced(
   all: ScoredRoute[],
   safest: ScoredRoute,
@@ -173,7 +284,6 @@ function pickBalanced(
   const remaining = all.filter((r) => r !== safest && r !== fastest);
   if (remaining.length === 0) return null;
 
-  // Prefer routes that diverge from BOTH safest and fastest.
   const ranked = remaining
     .map((r) => ({
       route: r,
@@ -181,14 +291,12 @@ function pickBalanced(
       simFast: pathSimilarity(r.path, fastest.path),
     }))
     .sort(
-      (a, b) =>
-        a.simSafe + a.simFast - (b.simSafe + b.simFast),
+      (a, b) => a.simSafe + a.simFast - (b.simSafe + b.simFast),
     );
 
   const best = ranked[0];
   if (!best) return null;
 
-  // If the candidate basically overlaps both, drop it instead of pretending.
   if (
     best.simSafe > SAFEST_VS_FASTEST_SIMILARITY &&
     best.simFast > SAFEST_VS_FASTEST_SIMILARITY
@@ -198,13 +306,65 @@ function pickBalanced(
   return best.route;
 }
 
-/* ─── Explanation copy ─── */
+/* ─────────────────────── Explanation copy ─────────────────────── */
 
 function buildSingleExplanation(only: ScoredRoute): string {
   if (only.highRiskFraction >= 0.25) {
-    return "Only available route — note: passes through some elevated-risk areas.";
+    return "Only available route — passes through some elevated-risk areas.";
   }
   return "Only available route to this destination.";
+}
+
+function buildBestExplanation(
+  safest: ScoredRoute,
+  trueFastest: ScoredRoute,
+): string {
+  const sameRoute = safest === trueFastest;
+  if (sameRoute) {
+    if (safest.highRiskFraction <= 0.05) {
+      return "Quickest path AND lowest risk — best choice.";
+    }
+    if (safest.highRiskFraction <= 0.15) {
+      return "Quickest path with the lowest overall risk.";
+    }
+    return "Quickest path with the lowest risk among the options.";
+  }
+  // safest is within 60s of fastest — basically the same time.
+  const secondsSlower = Math.round(safest.duration - trueFastest.duration);
+  return `Lowest-risk path — only ~${secondsSlower}s slower than the absolute quickest.`;
+}
+
+function buildAlternativeExplanation(
+  alt: ScoredRoute,
+  best: ScoredRoute,
+): string {
+  const minDelta = Math.round((alt.duration - best.duration) / 60);
+  const riskDelta = alt.avgRisk - best.avgRisk;
+
+  if (alt.duration < best.duration) {
+    // Faster but worse on risk
+    const minSaved = Math.round((best.duration - alt.duration) / 60);
+    if (riskDelta > 0.5) {
+      return `Saves ${minSaved} min — but passes through higher-risk areas.`;
+    }
+    return `Saves ${minSaved} min — comparable safety to the recommended route.`;
+  }
+
+  if (riskDelta < -0.3) {
+    return minDelta > 0
+      ? `Even safer than the recommended (+${minDelta} min) — different streets.`
+      : "Even safer than the recommended — different streets.";
+  }
+
+  if (alt.highRiskFraction >= 0.2) {
+    return minDelta > 0
+      ? `Different route (+${minDelta} min) — some elevated-risk segments.`
+      : "Different route — some elevated-risk segments.";
+  }
+
+  return minDelta > 0
+    ? `Different streets (+${minDelta} min) — comparable safety.`
+    : "Different streets — comparable safety.";
 }
 
 function buildSafestExplanation(
@@ -212,16 +372,16 @@ function buildSafestExplanation(
   fastest: ScoredRoute,
   minutesAdded: number,
 ): string {
-  const delta = Math.max(0, safest.duration - fastest.duration);
-  if (delta < 60) {
-    return safest.highRiskFraction <= 0.05
-      ? "Avoids higher-risk areas."
-      : "Mostly avoids higher-risk areas.";
+  const riskDelta = fastest.avgRisk - safest.avgRisk;
+  const tail = minutesAdded > 0 ? ` (+${minutesAdded} min vs Fastest)` : "";
+
+  if (riskDelta >= 1.5) {
+    return `Lowest-risk path — avgRisk ${safest.avgRisk.toFixed(1)} vs ${fastest.avgRisk.toFixed(1)} on Fastest${tail}.`;
   }
-  const tail = `+${minutesAdded} min vs. fastest`;
-  return safest.highRiskFraction <= 0.05
-    ? `Avoids higher-risk areas (${tail}).`
-    : `Stays clear of the worst areas (${tail}).`;
+  if (safest.highRiskFraction <= 0.05) {
+    return `Avoids higher-risk areas${tail}.`;
+  }
+  return `Stays clear of the worst spots${tail}.`;
 }
 
 function buildFastestExplanation(
@@ -229,37 +389,43 @@ function buildFastestExplanation(
   safest: ScoredRoute,
   minutesSaved: number,
 ): string {
-  if (fastest.highRiskFraction >= 0.25) {
+  const tail = minutesSaved > 0 ? ` saves ~${minutesSaved} min` : "";
+  if (fastest.highRiskFraction >= 0.25 || fastest.incidentImpacts > 0) {
     return minutesSaved > 0
-      ? `Quickest path (saves ~${minutesSaved} min) — passes through some elevated-risk areas.`
-      : "Quickest path — passes through some elevated-risk areas.";
+      ? `Quickest path — ${tail.trim()} but passes through elevated-risk areas.`
+      : "Quickest path — passes through elevated-risk areas.";
   }
   if (fastest.highRiskFraction >= 0.1) {
-    return "Quickest path — minor exposure on the way.";
+    return minutesSaved > 0
+      ? `Quickest path — ${tail.trim()}, minor exposure on the way.`
+      : "Quickest path — minor exposure on the way.";
   }
-  // No real safety penalty.
-  return safest === fastest
-    ? "Quickest and safest converge on this route."
+  return minutesSaved > 0
+    ? `Quickest path with no flagged areas (${tail.trim()}).`
     : "Quickest path with no flagged areas.";
 }
 
 function buildBalancedExplanation(
   balanced: ScoredRoute,
+  safest: ScoredRoute,
   fastest: ScoredRoute,
 ): string {
-  const deltaMin = Math.max(
+  const overFastest = Math.max(
     0,
     Math.round((balanced.duration - fastest.duration) / 60),
   );
+  const overFastestTail = overFastest > 0 ? ` (+${overFastest} min vs Fastest)` : "";
+
   if (balanced.highRiskFraction <= 0.1) {
-    return deltaMin > 0
-      ? `Balances time and safety (+${deltaMin} min vs. fastest).`
-      : "Balances time and safety.";
+    return `Compromise — avoids the worst spots${overFastestTail}.`;
   }
-  return "Trade-off between time and exposure.";
+  if (balanced.avgRisk < (safest.avgRisk + fastest.avgRisk) / 2) {
+    return `Middle ground${overFastestTail} — closer to Safest in exposure.`;
+  }
+  return `Middle ground${overFastestTail} — minor exposure on the way.`;
 }
 
-/* ─── formatting ─── */
+/* ─────────────────────── formatting ─────────────────────── */
 
 function formatDistance(meters: number): string {
   if (meters < 1000) return `${Math.round(meters)} m`;

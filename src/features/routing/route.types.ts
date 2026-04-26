@@ -3,12 +3,27 @@ import type { LatLng } from "@/shared/types";
 /**
  * Display category assigned to each compared route. Internal scoring is
  * what produces these — the labels are what the UI surfaces.
+ *
+ * `best` is special: it's set when one route wins on BOTH risk and time
+ * (or wins on risk and is within ~60s of the fastest), so we don't
+ * mislead the user with a "Fastest" card that's actually slower than
+ * the "Safest" card.
  */
 export type RouteCategory =
+  | "best"
   | "safest"
   | "fastest"
   | "balanced"
+  | "alternative"
   | "recommended";
+
+/**
+ * Visual tone for the route card. Drives border, ring, dot, badge —
+ * roughly "how good is this option overall?". Computed in `route-ranking`
+ * from a blend of avgRisk and how much slower the route is vs. the
+ * fastest one.
+ */
+export type RouteTone = "best" | "good" | "neutral" | "warn";
 
 export interface RouteSegment {
   path: LatLng[];
@@ -34,6 +49,8 @@ export interface RouteOption {
   label: string;
   /** Display category that drives layout / ordering. */
   category: RouteCategory;
+  /** Visual tone — "how good is this overall?". UI uses this for color. */
+  tone: RouteTone;
   /** One-line explanation shown in the route card. */
   explanation: string;
   /** Provider-supplied description (e.g. "via Hung Vuong"). */
