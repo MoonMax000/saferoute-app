@@ -760,9 +760,17 @@ export function MapView({
           ? "crosshair"
           : inspectorEnabled
             ? "help"
-            : undefined,
+            : isRebuilding
+              ? "wait"
+              : undefined,
     });
-  }, [pinMode, incidentPlacementMode, paintModeActive, inspectorEnabled]);
+  }, [
+    pinMode,
+    incidentPlacementMode,
+    paintModeActive,
+    inspectorEnabled,
+    isRebuilding,
+  ]);
 
   // Preview markers for origin/destination before route search
   useEffect(() => {
@@ -839,10 +847,7 @@ export function MapView({
       // below) so it stays vivid under the grayscale filter.
       if (focusMode && !isSelected) return;
 
-      const baseOpacity = isSelected ? 1 : 0.3;
-      // Soften the existing route while a fresh search is mid-flight so
-      // the user sees the previous polyline isn't the live answer.
-      const opacity = isRebuilding ? baseOpacity * 0.45 : baseOpacity;
+      const opacity = isSelected ? 1 : 0.3;
       const zIndex = isSelected ? 10 : 1;
       const skipCanvasPolyline = focusMode && isSelected;
 
@@ -921,7 +926,7 @@ export function MapView({
     if (hasBounds && !isRebuild) {
       map.fitBounds(bounds, { top: 60, bottom: 60, left: 60, right: 60 });
     }
-  }, [routes, focusMode, clearPolylines, reverseGeocode, mapInstanceId, isRebuilding]);
+  }, [routes, focusMode, clearPolylines, reverseGeocode, mapInstanceId]);
 
   // ── Focus-mode SVG overlay for the selected route ─────────────────
   // Lives on the OverlayView pane (DOM), so the canvas-only grayscale

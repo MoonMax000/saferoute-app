@@ -404,11 +404,18 @@ export default function Home() {
       // the old route's start/end markers stay on screen on top of
       // the new coords, which reads as "click did nothing".
       if (nextOrigin.trim() && nextDest.trim()) {
-        handleSearch(nextOrigin, nextDest, {
-          isDragRebuild: true,
-          originCoordsOverride: nextOriginCoords,
-          destCoordsOverride: nextDestCoords,
-        });
+        // Same 50ms safety delay as `handleMarkerDrag` — see comment
+        // there. State updates from the click need to commit before
+        // the search effect kicks off.
+        setTimeout(
+          () =>
+            handleSearch(nextOrigin, nextDest, {
+              isDragRebuild: true,
+              originCoordsOverride: nextOriginCoords,
+              destCoordsOverride: nextDestCoords,
+            }),
+          50,
+        );
       }
     },
     [origin, destination, originCoords, destCoords, handleSearch],
@@ -462,15 +469,21 @@ export default function Home() {
       const newOriginCoords = mode === "origin" ? latlng : originCoords;
       const newDestCoords = mode === "destination" ? latlng : destCoords;
       if (newOrigin.trim() && newDest.trim()) {
-        // Fire immediately — `handleSearch` reads from the explicit
-        // overrides, not from React state, so there's nothing to wait
-        // on. Skipping the old 300ms timer makes the rebuild feel
-        // instant when the user drops a marker.
-        handleSearch(newOrigin, newDest, {
-          isDragRebuild: true,
-          originCoordsOverride: newOriginCoords,
-          destCoordsOverride: newDestCoords,
-        });
+        // 50ms safety delay so the in-flight React batch (state
+        // updates from `setOrigin*` / `setDest*` and from
+        // `setIsLoading` inside `handleSearch`) lands cleanly before
+        // the next render, instead of trampling the just-fired
+        // `gmp-dragend` event chain. Imperceptible to the user, but
+        // makes the auto-rebuild reliable on every drop.
+        setTimeout(
+          () =>
+            handleSearch(newOrigin, newDest, {
+              isDragRebuild: true,
+              originCoordsOverride: newOriginCoords,
+              destCoordsOverride: newDestCoords,
+            }),
+          50,
+        );
       }
     },
     [origin, destination, originCoords, destCoords, handleSearch],
